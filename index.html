@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Нячанг · Польовий бланк</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+// ═══ FIREBASE CONFIG — вставь свої дані з Firebase Console ═══
+const firebaseConfig = {
+  apiKey: "AIzaSyCR9V2Zwvc0yz91TQyUybIcruDC0ZyP7jc",
+  authDomain: "field-survey-74867.firebaseapp.com",
+  projectId: "field-survey-74867",
+  storageBucket: "field-survey-74867.firebasestorage.app",
+  messagingSenderId: "354645098970",
+  appId: "1:354645098970:web:b29fa6c73b213c10cf00e3"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const DOC_REF = db.collection("field_surveys").doc("current_day");
+</script>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+
+
+const ZONES = [
+  { id:"Z1", name:"Центральний пляж", type:"Туристична" },
+  { id:"Z2", name:"Рибальська зона",  type:"Порт / Кон Се" },
+  { id:"Z3", name:"Гирло р. Кай",     type:"Річковий стік" },
+  { id:"Z4", name:"Контрольна",        type:"Малолюдне" },
+  { id:"Z5", name:"Мангрова",          type:"Опціонально" },
+];
+const MATERIALS = [
+  { id:"plastic", label:"Пластик", e:"🧴" },
+  { id:"glass",   label:"Скло",    e:"🍾" },
+  { id:"metal",   label:"Метал",   e:"🥫" },
+  { id:"paper",   label:"Папір",   e:"📦" },
+  { id:"organic", label:"Органіка",e:"🌿" },
+  { id:"other",   label:"Інше",    e:"❓" },
+];
+const SOURCES = [
+  { id:"household",    label:"Побутове" },
+  { id:"tourist",      label:"Туристичне" },
+  { id:"fishing",      label:"Рибальське" },
+  { id:"construction", label:"Будівельне" },
+  { id:"unknown",      label:"Невідомо" },
+];
+const SIZES = [
+  { id:"S", label:"S", desc:"2,5–10 см" },
+  { id:"M", label:"M", desc:"10–50 см" },
+  { id:"L", label:"L", desc:">50 см" },
+];
+const WEATHER = [
+  { id:"sun",   e:"☀️", label:"Сонячно" },
+  { id:"cloud", e:"⛅", label:"Хмарно" },
+  { id:"rain",  e:"🌧️",label:"Дощ" },
+  { id:"wind",  e:"💨", label:"Вітер" },
+];
+
+const C = {
+  bg:"#080b10", s1:"#0f1319", s2:"#161c26", s3:"#1e2636",
+  border:"#1f2940", acc:"#00e5a0", accD:"#003d2a",
+  blue:"#4da6ff", blueD:"#0a2540", amber:"#f5a623",
+  red:"#ff5a5a", text:"#c8d8f0", muted:"#4a607a", dim:"#2a3a52",
+};
+
+// ═══ ALL FONT SIZES ×2 FOR MOBILE ═══
+const G = `
+@import url('https://fonts.googleapis.com/css2?family=Syne+Mono&family=Outfit:wght@400;500;600;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:${C.bg};color:${C.text};font-family:'Outfit',sans-serif;overscroll-behavior:none}
+button{font-family:'Outfit',sans-serif;cursor:pointer}
+.app{max-width:430px;margin:0 auto;min-height:100vh}
+
+/* TOP */
+.top{background:${C.s1};border-bottom:1px solid ${C.border};padding:16px 16px;
+  display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:80}
+.top-back{background:none;border:none;color:${C.acc};font-size:22px;padding:2px 6px;line-height:1}
+.top-info{flex:1}
+.top-title{font-family:'Syne Mono',monospace;font-size:13px;color:${C.acc};letter-spacing:.08em}
+.top-sub{font-size:11px;color:${C.muted};margin-top:4px;font-family:'Syne Mono',monospace}
+.top-badge{background:${C.acc};color:#000;font-family:'Syne Mono',monospace;
+  font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px}
+
+/* SCROLL */
+.scroll{padding-bottom:100px}
+.sec{padding:16px 16px;border-bottom:1px solid ${C.border}}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.14em;color:${C.muted};
+  text-transform:uppercase;margin-bottom:12px;font-family:'Syne Mono',monospace}
+
+/* ZONE LIST */
+.zone-list{display:flex;flex-direction:column;gap:10px}
+.zone-card{background:${C.s2};border:1px solid ${C.border};border-radius:14px;
+  padding:11px 14px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:all .12s}
+.zone-card:active{transform:scale(.98)}
+.zc-id{font-family:'Syne Mono',monospace;font-size:24px;font-weight:700;color:${C.acc};min-width:50px}
+.zc-info{flex:1}
+.zc-name{font-size:14px;font-weight:600;color:${C.text}}
+.zc-type{font-size:11px;color:${C.muted};margin-top:3px}
+.zc-count{font-family:'Syne Mono',monospace;font-size:13px;color:${C.muted}}
+.zc-arr{color:${C.muted};font-size:17px}
+
+/* TRANSECT CARDS */
+.tlist{display:flex;flex-direction:column;gap:10px}
+.tcard{background:${C.s2};border:1px solid ${C.border};border-radius:14px;padding:16px}
+.tcard.active{border-color:${C.acc}}
+.tc-head{display:flex;align-items:center;gap:10px}
+.tc-num{font-family:'Syne Mono',monospace;font-size:22px;font-weight:700;color:${C.acc};min-width:44px}
+.tc-info{flex:1}
+.tc-title{font-size:13px;font-weight:600;color:${C.text}}
+.tc-sub{font-size:11px;color:${C.muted};margin-top:3px}
+.tc-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.tc-total{font-family:'Syne Mono',monospace;font-size:22px;font-weight:700;color:${C.acc}}
+.tc-status{font-size:10px;font-weight:700;letter-spacing:.1em;padding:5px 12px;
+  border-radius:12px;font-family:'Syne Mono',monospace}
+.tc-status.open{background:${C.accD};color:${C.acc}}
+.tc-status.closed{background:${C.dim};color:${C.muted}}
+.tc-actions{display:flex;gap:8px;margin-top:12px}
+.tc-btn{flex:1;background:none;border:1px solid ${C.border};border-radius:10px;
+  padding:12px 8px;color:${C.muted};font-size:12px;font-weight:500;transition:all .12s}
+.tc-btn:active{background:${C.s3}}
+.tc-btn.acc{border-color:${C.acc}55;color:${C.acc}}
+.tc-btn.danger{border-color:${C.red}33;color:${C.red}}
+.tc-note{font-size:11px;color:${C.muted};font-style:italic;margin-top:10px}
+
+/* TALLY DETAIL */
+.td-section{margin-top:12px;padding-top:12px;border-top:1px solid ${C.border}}
+.dtbl{width:100%;border-collapse:collapse}
+.dtbl th{font-size:10px;color:${C.muted};text-align:left;padding:6px 6px;
+  border-bottom:1px solid ${C.border};font-family:'Syne Mono',monospace;
+  text-transform:uppercase;letter-spacing:.08em}
+.dtbl td{padding:8px 6px;border-bottom:1px solid ${C.border}15;font-size:12px;vertical-align:middle}
+.dtbl tr:last-child td{border-bottom:none}
+.d-mat{font-weight:600;color:${C.text};font-size:12px}
+.d-src{color:${C.muted};font-size:10px}
+.d-sz{font-family:'Syne Mono',monospace;font-size:11px;color:${C.blue};
+  background:${C.blueD};border-radius:6px;padding:3px 8px;display:inline-block}
+.d-n{font-family:'Syne Mono',monospace;font-size:17px;font-weight:700;color:${C.acc};text-align:right}
+.d-conc{font-family:'Syne Mono',monospace;font-size:10px;color:${C.amber};text-align:right}
+
+/* ITEM LOG */
+.ilog{display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto;padding-right:2px}
+.ilog::-webkit-scrollbar{width:4px}
+.ilog::-webkit-scrollbar-track{background:transparent}
+.ilog::-webkit-scrollbar-thumb{background:${C.dim};border-radius:2px}
+.irow-item{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;
+  background:${C.s3};border-radius:10px;transition:all .12s;cursor:default}
+.irow-item.last{border-left:3px solid ${C.acc}}
+.irow-item.group{background:${C.s2};border:1px solid ${C.border}}
+.i-num{font-family:'Syne Mono',monospace;font-size:10px;color:${C.muted};min-width:32px;margin-top:2px}
+.i-info{flex:1}
+.i-main{font-size:12px;font-weight:500;color:${C.text};display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.i-badge{font-family:'Syne Mono',monospace;font-size:12px;font-weight:700;
+  color:#000;background:${C.acc};border-radius:8px;padding:2px 10px}
+.i-comment{font-size:11px;color:${C.amber};margin-top:6px;padding-top:6px;
+  border-top:1px solid ${C.border};line-height:1.5}
+.i-sz{font-family:'Syne Mono',monospace;font-size:11px;color:${C.blue};
+  background:${C.blueD};border-radius:6px;padding:2px 8px;flex-shrink:0;margin-top:2px}
+
+/* STEP / CHIPS */
+.step-hdr{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.step-n{width:26px;height:26px;border-radius:50%;background:${C.acc};color:#000;
+  font-family:'Syne Mono',monospace;font-size:11px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.step-n.off{background:${C.dim};color:${C.muted}}
+.step-title{font-size:13px;font-weight:600;color:${C.text}}
+.step-sel{font-size:12px;color:${C.acc};font-family:'Syne Mono',monospace;margin-left:auto}
+.chips{display:flex;flex-wrap:wrap;gap:10px}
+.chip{background:${C.s2};border:1px solid ${C.border};border-radius:24px;
+  padding:9px 15px;cursor:pointer;font-size:13px;color:${C.text};
+  transition:all .12s;user-select:none;font-weight:500}
+.chip:active{transform:scale(.93)}
+.chip.on{border-color:${C.acc};background:${C.accD};color:${C.acc}}
+.szrow{display:flex;gap:10px}
+.szbtn{flex:1;background:${C.s2};border:1px solid ${C.border};border-radius:12px;
+  padding:11px 8px;cursor:pointer;text-align:center;transition:all .12s}
+.szbtn:active{transform:scale(.95)}
+.szbtn.on{border-color:${C.blue};background:${C.blueD}}
+.sz-l{font-family:'Syne Mono',monospace;font-size:22px;font-weight:700;color:${C.text}}
+.szbtn.on .sz-l{color:${C.blue}}
+.sz-d{font-size:11px;color:${C.muted};margin-top:4px}
+
+/* REMEMBER */
+.rem-row{display:flex;align-items:center;gap:10px;margin-top:10px;
+  padding:10px 14px;background:${C.s3};border-radius:10px;cursor:pointer;user-select:none}
+.rem-check{width:20px;height:20px;border-radius:6px;border:2px solid ${C.border};
+  background:${C.s2};display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-size:11px;transition:all .12s}
+.rem-check.on{background:${C.acc};border-color:${C.acc};color:#000}
+.rem-label{font-size:12px;color:${C.muted};font-family:'Syne Mono',monospace}
+
+/* TALLY BOX */
+.tally-box{background:${C.s2};border:1px solid ${C.border};border-radius:14px;
+  padding:16px;margin:0 16px}
+.tally-top{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.tally-desc{flex:1}
+.tally-combo{font-size:14px;font-weight:600;color:${C.text}}
+.tally-sub{font-size:11px;color:${C.muted};margin-top:4px}
+.tally-num{font-family:'Syne Mono',monospace;font-size:43px;font-weight:700;
+  color:${C.acc};line-height:1;min-width:80px;text-align:right}
+.btn-plus{width:100%;background:${C.acc};color:#000;border:none;border-radius:14px;
+  padding:16px;font-size:24px;font-weight:700;font-family:'Syne Mono',monospace;transition:all .1s}
+.btn-plus:active{transform:scale(.97);background:#00c488}
+.btn-plus:disabled{opacity:.25;cursor:not-allowed;background:${C.dim};color:${C.muted}}
+.btn-minus{width:100%;background:none;border:1px solid ${C.border};color:${C.red};
+  border-radius:12px;padding:16px;font-size:14px;font-weight:500;margin-top:10px;transition:all .12s}
+.btn-minus:disabled{opacity:.2;cursor:not-allowed}
+
+/* MINI STATS */
+.mstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mstat{background:${C.s2};border:1px solid ${C.border};border-radius:12px;
+  padding:14px;text-align:center}
+.mstat-n{font-family:'Syne Mono',monospace;font-size:23px;font-weight:700;color:${C.acc}}
+.mstat-l{font-size:8px;color:${C.muted};margin-top:4px;text-transform:uppercase;
+  letter-spacing:.08em;font-family:'Syne Mono',monospace}
+
+/* INPUTS */
+.inp{background:${C.s2};border:1px solid ${C.border};border-radius:10px;
+  padding:14px 16px;color:${C.text};font-size:14px;font-family:'Outfit',sans-serif;
+  outline:none;width:100%;-webkit-appearance:none}
+.inp:focus{border-color:${C.acc}}
+.inp::placeholder{color:${C.muted}}
+textarea.inp{resize:none;line-height:1.5}
+
+/* BUTTONS */
+.btn-save{width:100%;background:${C.acc};color:#000;border:none;border-radius:14px;
+  padding:14px;font-size:16px;font-weight:700;font-family:'Outfit',sans-serif;transition:all .12s}
+.btn-save:active{transform:scale(.98)}
+.btn-new{width:100%;background:none;border:1px dashed ${C.acc}55;border-radius:14px;
+  padding:12px;color:${C.acc};font-size:14px;font-weight:600;
+  font-family:'Outfit',sans-serif;transition:all .12s;margin-top:6px}
+.btn-new:active{background:${C.accD}}
+
+/* DAY */
+.wx-row{display:flex;gap:10px}
+.wx-btn{background:${C.s2};border:1px solid ${C.border};border-radius:12px;
+  padding:14px 18px;font-size:18px;transition:all .12s;text-align:center}
+.wx-btn.on{border-color:${C.amber}}
+.wx-lbl{font-size:10px;color:${C.muted};margin-top:4px;font-family:'Syne Mono',monospace}
+.day-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dstat{background:${C.s2};border:1px solid ${C.border};border-radius:12px;padding:16px}
+.dstat-n{font-family:'Syne Mono',monospace;font-size:26px;font-weight:700;color:${C.acc}}
+.dstat-l{font-size:11px;color:${C.muted};margin-top:4px;text-transform:uppercase;
+  letter-spacing:.07em;font-family:'Syne Mono',monospace}
+.dstat.blue .dstat-n{color:${C.blue}}
+.dstat.amber .dstat-n{color:${C.amber}}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bar-lbl{font-size:12px;color:${C.text};min-width:100px;font-weight:500}
+.bar-track{flex:1;height:10px;background:${C.s3};border-radius:5px;overflow:hidden}
+.bar-fill{height:100%;border-radius:5px;background:${C.acc};transition:width .4s}
+.bar-val{font-family:'Syne Mono',monospace;font-size:12px;color:${C.acc};min-width:36px;text-align:right}
+
+/* EXPORT */
+.btn-export{width:100%;background:${C.s2};color:${C.acc};border:1px solid ${C.acc}55;
+  border-radius:14px;padding:14px;font-size:14px;font-weight:600;
+  font-family:'Outfit',sans-serif;margin-bottom:10px;transition:all .12s}
+.btn-export:active{background:${C.accD}}
+.btn-danger{width:100%;background:none;color:${C.red};border:1px solid ${C.red}30;
+  border-radius:14px;padding:12px;font-size:13px;font-weight:600;
+  font-family:'Outfit',sans-serif;opacity:.7;transition:all .12s;margin-top:10px}
+.btn-danger:active{opacity:1}
+.note-text{font-size:11px;color:${C.muted};line-height:1.7;
+  font-family:'Syne Mono',monospace;margin-top:14px}
+
+/* BNAV */
+.bnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:430px;background:${C.s1};border-top:1px solid ${C.border};
+  display:flex;z-index:80;padding-bottom:env(safe-area-inset-bottom)}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;
+  padding:12px 4px 10px;cursor:pointer}
+.bn-icon{font-size:17px;line-height:1}
+.bn-label{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:${C.muted};margin-top:4px;font-family:'Syne Mono',monospace}
+.bn-item.on .bn-label{color:${C.acc}}
+.bn-dot{width:5px;height:5px;background:${C.acc};border-radius:50%;margin-top:4px;opacity:0}
+.bn-item.on .bn-dot{opacity:1}
+
+.empty{text-align:center;padding:40px 20px;color:${C.muted};
+  font-size:12px;font-family:'Syne Mono',monospace;line-height:1.9}
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+  background:${C.acc};color:#000;padding:10px 20px;border-radius:24px;
+  font-size:13px;font-weight:700;z-index:200;pointer-events:none;
+  animation:su .2s ease;font-family:'Syne Mono',monospace;white-space:nowrap}
+@keyframes su{from{opacity:0;transform:translateX(-50%) translateY(12px)}
+  to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.loading{display:flex;align-items:center;justify-content:center;
+  height:100vh;font-family:'Syne Mono',monospace;color:${C.acc};font-size:13px}
+
+/* CONFIRM DIALOG */
+.confirm-overlay{position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,.65);z-index:300;display:flex;align-items:center;
+  justify-content:center;padding:14px;animation:fadeIn .15s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.confirm-box{background:${C.s1};border:1px solid ${C.border};border-radius:18px;
+  padding:20px 18px;max-width:360px;width:100%;text-align:center}
+.confirm-msg{font-size:14px;color:${C.text};margin-bottom:22px;line-height:1.5}
+.confirm-btns{display:flex;gap:12px}
+.confirm-cancel{flex:1;background:${C.s2};border:1px solid ${C.border};border-radius:12px;
+  padding:16px;color:${C.muted};font-size:13px;font-weight:600}
+.confirm-ok{flex:1;background:${C.red};border:none;border-radius:12px;
+  padding:16px;color:#fff;font-size:13px;font-weight:700}
+`;
+
+// ─── HELPERS ─────────────────────────────────────────────────
+const mkKey    = (m,s,sz) => `${m}|${s}|${sz}`;
+const nowTime  = () => new Date().toTimeString().slice(0,5);
+const todayStr = () => new Date().toISOString().split("T")[0];
+const AREA     = 250; // 50×5 м²
+
+const matStats = tallies =>
+  MATERIALS.map(m=>({...m,
+    count: Object.entries(tallies)
+      .filter(([k])=>k.startsWith(m.id))
+      .reduce((a,[,v])=>a+v,0)
+  })).filter(m=>m.count>0).sort((a,b)=>b.count-a.count);
+
+const STORAGE_KEY = "nhatrang_field_v2";
+
+// Groups consecutive items ONLY if same mat+src+siz AND same comment.
+// Different comment = different debris type → separate group.
+const groupItems = (items) => {
+  const groups = [];
+  for (const item of items) {
+    const key = mkKey(item.mat, item.src, item.siz);
+    const cmt = (item.comment || "").trim();
+    const last = groups[groups.length - 1];
+    if (last && last.key === key && last.comment === cmt) {
+      last.count++;
+      last.items.push(item);
+    } else {
+      groups.push({
+        key, count:1, items:[item],
+        mat:item.mat, src:item.src, siz:item.siz,
+        comment: cmt,
+        firstN: item.n,
+      });
+    }
+  }
+  return groups;
+};
+
+// ─── MAIN ─────────────────────────────────────────────────────
+function App() {
+  const [loaded,   setLoaded]   = useState(false);
+  const [tab,      setTab]      = useState("zones");
+  const [zoneId,   setZoneId]   = useState(null);
+  const [tId,      setTId]      = useState(null);
+  const [detailTab,setDetailTab]= useState("tally");
+  const [expanded, setExpanded] = useState({});
+  const [toast,    setToast]    = useState(null);
+
+  const [date,      setDate]      = useState(todayStr());
+  const [weather,   setWeather]   = useState(null);
+  const [transects, setTransects] = useState([]);
+
+  const [mat, setMat] = useState(null);
+  const [src, setSrc] = useState(null);
+  const [siz, setSiz] = useState(null);
+  const [comment, setComment] = useState("");
+  const commentRef = useRef("");
+  const [remembered, setRemembered] = useState({mat:null,src:null,siz:null});
+
+  const [confirmDialog, setConfirmDialog] = useState(null);
+
+  const [saveStatus, setSaveStatus] = useState(""); // "" | "saving" | "saved" | "error"
+
+  const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),1800); };
+  const askConfirm = (msg, onOk) => setConfirmDialog({msg, onOk});
+
+  const remMat = remembered.mat !== null;
+  const remSrc = remembered.src !== null;
+  const remSiz = remembered.siz !== null;
+
+  // ── STORAGE: Firebase Firestore + localStorage fallback ──
+  useEffect(()=>{
+    (async()=>{
+      try {
+        // Try Firebase first
+        const snap = await DOC_REF.get();
+        if (snap.exists) {
+          const d = snap.data();
+          if (d.date)       setDate(d.date);
+          if (d.weather)    setWeather(d.weather);
+          if (d.transects && d.transects.length > 0) setTransects(d.transects);
+          if (d.remembered) {
+            setRemembered(d.remembered);
+            if (d.remembered.mat) setMat(d.remembered.mat);
+            if (d.remembered.src) setSrc(d.remembered.src);
+            if (d.remembered.siz) setSiz(d.remembered.siz);
+          }
+          setSaveStatus("saved");
+        } else {
+          // Try localStorage fallback
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const d = JSON.parse(raw);
+            if (d.date) setDate(d.date);
+            if (d.weather) setWeather(d.weather);
+            if (d.transects && d.transects.length > 0) setTransects(d.transects);
+            if (d.remembered) {
+              setRemembered(d.remembered);
+              if (d.remembered.mat) setMat(d.remembered.mat);
+              if (d.remembered.src) setSrc(d.remembered.src);
+              if (d.remembered.siz) setSiz(d.remembered.siz);
+            }
+          }
+          setSaveStatus("");
+        }
+      } catch(e) {
+        console.warn("Firebase load failed, trying localStorage", e);
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const d = JSON.parse(raw);
+            if (d.date) setDate(d.date);
+            if (d.weather) setWeather(d.weather);
+            if (d.transects && d.transects.length > 0) setTransects(d.transects);
+            if (d.remembered) {
+              setRemembered(d.remembered);
+              if (d.remembered.mat) setMat(d.remembered.mat);
+              if (d.remembered.src) setSrc(d.remembered.src);
+              if (d.remembered.siz) setSiz(d.remembered.siz);
+            }
+            setSaveStatus("local");
+          }
+        } catch(e2) {}
+        setSaveStatus("error");
+      }
+      setLoaded(true);
+    })();
+  },[]);
+
+  const persist = useCallback(async (ts,dt,wx,rem) => {
+    setSaveStatus("saving");
+    const data = { date:dt, weather:wx, transects:ts, remembered:rem, updatedAt: new Date().toISOString() };
+    // Always save to localStorage (instant, offline-safe)
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {}
+    // Save to Firebase (cloud)
+    try {
+      await DOC_REF.set(data);
+      setSaveStatus("saved");
+    } catch(e) {
+      console.warn("Firebase save failed", e);
+      setSaveStatus("local");
+    }
+  },[]);
+
+  const setTs = (newTs) => { setTransects(newTs); persist(newTs,date,weather,remembered); };
+  const setDay = (dt,wx) => { setDate(dt); setWeather(wx); persist(transects,dt,wx,remembered); };
+  const setRem = (rem)   => { setRemembered(rem); persist(transects,date,weather,rem); };
+
+  // ── DERIVED ──
+  const zone     = ZONES.find(z=>z.id===zoneId);
+  const zoneTs   = transects.filter(t=>t.zoneId===zoneId);
+  const activeT  = transects.find(t=>t.id===tId);
+
+  const curKey   = mat&&src&&siz ? mkKey(mat,src,siz) : null;
+  const curCount = curKey ? (activeT?.tallies[curKey]||0) : 0;
+  const canTally = !!(mat&&src&&siz&&activeT);
+
+  const formTotal   = activeT ? activeT.items.length : 0;
+  const formPlastic = activeT ? activeT.items.filter(i=>i.mat==="plastic").length : 0;
+
+  const allItems   = transects.flatMap(t=>t.items);
+  const dayTotal   = allItems.length;
+  const dayPlastic = allItems.filter(i=>i.mat==="plastic").length;
+
+  const allTallies = transects.reduce((acc,t)=>{
+    Object.entries(t.tallies).forEach(([k,v])=>{acc[k]=(acc[k]||0)+v;});
+    return acc;
+  },{});
+  const dayMat = matStats(allTallies);
+
+  // ── TALLY ACTIONS ──
+  const addOne = () => {
+    if (!canTally) return;
+    const newItem = {
+      id: Date.now(),
+      mat, src, siz,
+      n: (activeT.items.length)+1,
+      comment: (commentRef.current || "").trim(),
+    };
+    setTs(transects.map(t => t.id!==tId ? t : {
+      ...t,
+      tallies: {...t.tallies, [curKey]:(t.tallies[curKey]||0)+1},
+      items:   [...t.items, newItem],
+    }));
+    setComment(""); commentRef.current = "";
+    const ml = MATERIALS.find(m=>m.id===mat)?.label;
+    const sl = SIZES.find(s=>s.id===siz)?.label;
+    showToast(`+1 · ${ml} / ${sl}`);
+  };
+
+  const removeOne = () => {
+    if (!canTally||curCount===0) return;
+    const items  = [...activeT.items];
+    const lastIdx = items.map(i=>mkKey(i.mat,i.src,i.siz)).lastIndexOf(curKey);
+    if (lastIdx===-1) return;
+    items.splice(lastIdx,1);
+    const renumbered = items.map((it,i)=>({...it,n:i+1}));
+    const newTallies = {...activeT.tallies,[curKey]:activeT.tallies[curKey]-1};
+    if (newTallies[curKey]===0) delete newTallies[curKey];
+    setTs(transects.map(t=>t.id!==tId?t:{...t,tallies:newTallies,items:renumbered}));
+  };
+
+  const handleMatSelect = (id) => {
+    setMat(id);
+    if (remMat) setRem({...remembered, mat:id});
+  };
+  const handleSrcSelect = (id) => {
+    setSrc(id);
+    if (remSrc) setRem({...remembered, src:id});
+  };
+  const handleSizSelect = (id) => {
+    setSiz(id);
+    if (remSiz) setRem({...remembered, siz:id});
+  };
+
+  const handleRem = (field,val,checked) => {
+    const rem={...remembered,[field]:checked?val:null};
+    setRem(rem);
+  };
+
+  // ── TRANSECT ACTIONS ──
+  const newTransect = () => {
+    const closed = transects.map(t=>t.zoneId===zoneId&&t.open?{...t,open:false}:t);
+    const num = zoneTs.length+1;
+    const nt = { id:Date.now(), zoneId, num, time:nowTime(), note:"", open:true, tallies:{}, items:[] };
+    const newTs = [...closed, nt];
+    setTs(newTs);
+    setTId(nt.id);
+    setDetailTab("tally");
+    setTab("tally");
+  };
+
+  const openTransect = (t) => { setTId(t.id); setDetailTab("tally"); setTab("tally"); };
+
+  const closeTransect = () => {
+    if (tId) setTs(transects.map(t=>t.id===tId?{...t,open:false}:t));
+    setTId(null); setTab("zone");
+  };
+
+  const deleteTransect = (id) => {
+    const t = transects.find(tr=>tr.id===id);
+    const cnt = t ? t.items.length : 0;
+    if (cnt > 0) {
+      askConfirm(`Видалити трансект №${t.num} (${cnt} предметів)?`, () => {
+        setTs(transects.filter(tr=>tr.id!==id));
+        if (tId===id) { setTId(null); setTab("zone"); }
+        showToast("🗑 Видалено");
+      });
+    } else {
+      setTs(transects.filter(tr=>tr.id!==id));
+      if (tId===id) { setTId(null); setTab("zone"); }
+      showToast("🗑 Видалено");
+    }
+  };
+
+  const updateNote = note => setTs(transects.map(t=>t.id!==tId?t:{...t,note}));
+  const toggleExp  = id   => setExpanded(e=>({...e,[id]:!e[id]}));
+
+  // ── STATS PER TRANSECT ──
+  const transectStats = (t) => {
+    const byKey = {};
+    t.items.forEach(i=>{
+      const k=mkKey(i.mat,i.src,i.siz);
+      byKey[k]=(byKey[k]||0)+1;
+    });
+    return Object.entries(byKey).map(([k,n])=>{
+      const [mId,sId,szId]=k.split("|");
+      return {
+        key:k, n,
+        mat: MATERIALS.find(m=>m.id===mId),
+        src: SOURCES.find(s=>s.id===sId),
+        siz: SIZES.find(s=>s.id===szId),
+        conc: (n/AREA).toFixed(4),
+      };
+    }).sort((a,b)=>b.n-a.n);
+  };
+
+  // ── DAY STATS ──
+  const transectCount = transects.length;
+  const avgConc = transectCount>0 ? (dayTotal/transectCount/AREA).toFixed(4) : "—";
+
+  const typeConcs = (() => {
+    return Object.entries(allTallies).map(([k,total])=>{
+      const [mId,sId,szId]=k.split("|");
+      return {
+        key:k, total,
+        mat: MATERIALS.find(m=>m.id===mId),
+        src: SOURCES.find(s=>s.id===sId),
+        siz: SIZES.find(s=>s.id===szId),
+        avgConc: transectCount>0?(total/transectCount/AREA).toFixed(4):"—",
+      };
+    }).sort((a,b)=>b.total-a.total);
+  })();
+
+  // ── TSV EXPORT (tabs = works on mobile Sheets) ──
+  const exportTSV = () => {
+    const T = "\t";
+    const clean = s => String(s||"").replace(/\t/g," ").replace(/\n/g," ");
+    const h1 = ["Дата","Зона","Трансект_№","Час","Примітка_трансект","Предмет_№","Матеріал","Джерело","Розмір","Коментар"].join(T);
+    const rows1 = transects.flatMap(t=>
+      t.items.map(i=>{
+        const zn = ZONES.find(z=>z.id===t.zoneId)?.name||t.zoneId;
+        const ml = MATERIALS.find(m=>m.id===i.mat)?.label||i.mat;
+        const sl = SOURCES.find(s=>s.id===i.src)?.label||i.src;
+        return [date,clean(zn),t.num,t.time,clean(t.note),i.n,ml,sl,i.siz,clean(i.comment)].join(T);
+      })
+    );
+    const h2 = "\n" + ["СТАТИСТИКА КОНЦЕНТРАЦІЇ (пред./250м²)"].join(T);
+    const h3 = ["Матеріал","Джерело","Розмір","Всього","Сер.конц."].join(T);
+    const rows2 = typeConcs.map(tc=>
+      [tc.mat?.label||"—",tc.src?.label||"—",tc.siz?.label||"—",tc.total,tc.avgConc].join(T)
+    );
+    const tsv = [h1,...rows1,h2,h3,...rows2].join("\n");
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(tsv).then(()=>showToast("📊 Скопійовано!")).catch(()=>showToast("⚠ Помилка копіювання"));
+    } else {
+      showToast("⚠ Буфер недоступний");
+    }
+  };
+
+  const resetAll = () => {
+    askConfirm("Скинути всі дані за день?", () => {
+      setTs([]); setTId(null); setTab("zones");
+      showToast("🔄 Скинуто");
+    });
+  };
+
+  if (!loaded) return <><style>{G}</style><div className="loading">Завантаження...</div></>;
+
+  return (
+    <>
+      <style>{G}</style>
+      <div className="app">
+
+        {/* TOPBAR */}
+        <div className="top">
+          {(tab==="zone"||tab==="tally")&&(
+            <button className="top-back" onClick={()=>{
+              if (tab==="tally") setTab("zone");
+              else { setZoneId(null); setTab("zones"); }
+            }}>←</button>
+          )}
+          <div className="top-info">
+            <div className="top-title">
+              {tab==="zones" && "🌊 НЯЧАНГ · БЛАНК"}
+              {tab==="zone"  && `${zoneId} · ${zone?.name}`}
+              {tab==="tally" && `${zoneId} · Т№${activeT?.num}`}
+              {tab==="day"   && "ДЕНЬ · СТАТ."}
+              {tab==="export"&& "ЗВІТ · ЕКСПОРТ"}
+            </div>
+            <div className="top-sub">
+              {tab==="zones" && `${date} · ${weather?WEATHER.find(w=>w.id===weather)?.label:"погода?"}`}
+              {tab==="zone"  && `${zoneTs.length} трансект(ів)`}
+              {tab==="tally" && `${formTotal} предм. · ${activeT?.open?"● відкр.":"закр."}`}
+              {tab==="day"   && `${transects.length} тр. · ${dayTotal} предм.`}
+              {tab==="export"&& "CSV лог + конц."}
+            </div>
+          </div>
+          {dayTotal>0&&["zones","day","export"].includes(tab)&&
+            <div className="top-badge">{dayTotal}</div>}
+          <div style={{fontSize:9,fontFamily:"'Syne Mono',monospace",
+            color:saveStatus==="error"?C.red:saveStatus==="saved"?C.acc:saveStatus==="local"?C.amber:C.muted,
+            minWidth:12,textAlign:"right"}}>
+            {saveStatus==="saving"?"⏳":saveStatus==="saved"?"☁️":saveStatus==="local"?"📱":saveStatus==="error"?"❌":""}
+          </div>
+        </div>
+
+        <div className="scroll">
+
+          {/* ══ ZONES ══ */}
+          {tab==="zones"&&(
+            <div className="sec">
+              <div className="lbl">Оберіть ділянку</div>
+              <div className="zone-list">
+                {ZONES.map(z=>{
+                  const cnt  = transects.filter(t=>t.zoneId===z.id).flatMap(t=>t.items).length;
+                  const hasO = transects.some(t=>t.zoneId===z.id&&t.open);
+                  return (
+                    <div key={z.id} className="zone-card"
+                      onClick={()=>{setZoneId(z.id);setTab("zone")}}>
+                      <div className="zc-id">{z.id}</div>
+                      <div className="zc-info">
+                        <div className="zc-name">{z.name}</div>
+                        <div className="zc-type">{z.type}{hasO?" · ● open":""}</div>
+                      </div>
+                      {cnt>0&&<div className="zc-count">{cnt}</div>}
+                      <div className="zc-arr">›</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ══ ZONE ══ */}
+          {tab==="zone"&&zone&&(
+            <div className="sec">
+              <div className="lbl">{zoneTs.length} трансект(ів)</div>
+              {zoneTs.length===0&&<div className="empty">Немає трансектів.<br/>Натисни «+ Новий» нижче.</div>}
+              <div className="tlist">
+                {zoneTs.map(t=>{
+                  const tot  = t.items.length;
+                  const isEx = expanded[t.id];
+                  const sts  = transectStats(t);
+                  return (
+                    <div key={t.id} className={`tcard${t.open?" active":""}`}>
+                      <div className="tc-head">
+                        <div className="tc-num">#{t.num}</div>
+                        <div className="tc-info">
+                          <div className="tc-title">Т№{t.num} · {t.time}</div>
+                          <div className="tc-sub">{tot} предм. · {sts.length} комб.</div>
+                        </div>
+                        <div className="tc-right">
+                          <div className="tc-total">{tot}</div>
+                          <span className={`tc-status ${t.open?"open":"closed"}`}>
+                            {t.open?"OPEN":"DONE"}
+                          </span>
+                        </div>
+                      </div>
+                      {t.note&&<div className="tc-note">"{t.note}"</div>}
+                      <div className="tc-actions">
+                        <button className="tc-btn" onClick={()=>toggleExp(t.id)}>
+                          {isEx?"▲":"▼ Деталі"}
+                        </button>
+                        <button className="tc-btn acc" onClick={()=>openTransect(t)}>
+                          {t.open?"▶ Далі":"↩ Відкр."}
+                        </button>
+                        <button className="tc-btn danger" onClick={()=>deleteTransect(t.id)}>🗑</button>
+                      </div>
+                      {isEx&&tot>0&&(
+                        <div className="td-section">
+                          <div className="lbl" style={{marginBottom:6}}>Зведена таблиця</div>
+                          <table className="dtbl">
+                            <thead>
+                              <tr>
+                                <th>Матеріал</th>
+                                <th>Кл.</th>
+                                <th style={{textAlign:"right"}}>N</th>
+                                <th style={{textAlign:"right"}}>конц.</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sts.map(s=>(
+                                <tr key={s.key}>
+                                  <td>
+                                    <div className="d-mat">{s.mat?.e} {s.mat?.label}</div>
+                                    <div className="d-src">{s.src?.label}</div>
+                                  </td>
+                                  <td><span className="d-sz">{s.siz?.label}</span></td>
+                                  <td className="d-n">{s.n}</td>
+                                  <td className="d-conc">{s.conc}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <button className="btn-new" onClick={newTransect}>+ Новий трансект (50×5 м)</button>
+            </div>
+          )}
+
+          {/* ══ TALLY ══ */}
+          {tab==="tally"&&activeT&&(
+            <>
+              <div style={{display:"flex",background:C.s1,borderBottom:`1px solid ${C.border}`}}>
+                {[["tally","РАХУНОК"],["log","ЛОГ"],["stats","СТАТ."]].map(([id,label])=>(
+                  <div key={id}
+                    style={{flex:1,padding:"14px 4px",textAlign:"center",cursor:"pointer",
+                      fontFamily:"'Syne Mono',monospace",fontSize:11,fontWeight:700,
+                      letterSpacing:".1em",color:detailTab===id?C.acc:C.muted,
+                      borderBottom:`3px solid ${detailTab===id?C.acc:"transparent"}`,
+                      transition:"all .15s"}}
+                    onClick={()=>setDetailTab(id)}>
+                    {label}
+                    {id==="log"&&formTotal>0&&
+                      <span style={{marginLeft:6,background:C.acc,color:"#000",
+                        fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10}}>
+                        {formTotal}
+                      </span>}
+                  </div>
+                ))}
+              </div>
+
+              {detailTab==="tally"&&<>
+                <div className="sec">
+                  <div className="lbl">Примітка</div>
+                  <textarea className="inp" rows={2}
+                    placeholder="Стан берега, прилив..."
+                    value={activeT.note} onChange={e=>updateNote(e.target.value)}/>
+                </div>
+
+                <div className="sec">
+                  <div className="step-hdr">
+                    <div className={`step-n${mat?"":" off"}`}>1</div>
+                    <div className="step-title">Матеріал</div>
+                    {mat&&<div className="step-sel">{MATERIALS.find(m=>m.id===mat)?.label}</div>}
+                  </div>
+                  <div className="chips">
+                    {MATERIALS.map(m=>(
+                      <div key={m.id} className={`chip${mat===m.id?" on":""}`}
+                        onClick={()=>handleMatSelect(m.id)}>{m.e} {m.label}</div>
+                    ))}
+                  </div>
+                  <div className="rem-row" onClick={()=>handleRem("mat",mat,!remMat)}>
+                    <div className={`rem-check${remMat?" on":""}`}>{remMat?"✓":""}</div>
+                    <div className="rem-label">Запам'ятати</div>
+                  </div>
+                </div>
+
+                <div className="sec">
+                  <div className="step-hdr">
+                    <div className={`step-n${src?"":" off"}`}>2</div>
+                    <div className="step-title">Джерело</div>
+                    {src&&<div className="step-sel">{SOURCES.find(s=>s.id===src)?.label}</div>}
+                  </div>
+                  <div className="chips">
+                    {SOURCES.map(s=>(
+                      <div key={s.id} className={`chip${src===s.id?" on":""}`}
+                        onClick={()=>handleSrcSelect(s.id)}>{s.label}</div>
+                    ))}
+                  </div>
+                  <div className="rem-row" onClick={()=>handleRem("src",src,!remSrc)}>
+                    <div className={`rem-check${remSrc?" on":""}`}>{remSrc?"✓":""}</div>
+                    <div className="rem-label">Запам'ятати</div>
+                  </div>
+                </div>
+
+                <div className="sec">
+                  <div className="step-hdr">
+                    <div className={`step-n${siz?"":" off"}`}>3</div>
+                    <div className="step-title">Розмір</div>
+                    <span style={{fontSize:10,color:C.muted,fontFamily:"'Syne Mono',monospace",marginLeft:"auto"}}>
+                      NOAA 2013
+                    </span>
+                  </div>
+                  <div className="szrow">
+                    {SIZES.map(sz=>(
+                      <div key={sz.id} className={`szbtn${siz===sz.id?" on":""}`}
+                        onClick={()=>handleSizSelect(sz.id)}>
+                        <div className="sz-l">{sz.label}</div>
+                        <div className="sz-d">{sz.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rem-row" onClick={()=>handleRem("siz",siz,!remSiz)}>
+                    <div className={`rem-check${remSiz?" on":""}`}>{remSiz?"✓":""}</div>
+                    <div className="rem-label">Запам'ятати</div>
+                  </div>
+                </div>
+
+                <div className="tally-box" style={{marginTop:4}}>
+                  {canTally&&(
+                    <div className="tally-top">
+                      <div className="tally-desc">
+                        <div className="tally-combo">
+                          {MATERIALS.find(m=>m.id===mat)?.e} {MATERIALS.find(m=>m.id===mat)?.label} · {SOURCES.find(s=>s.id===src)?.label}
+                        </div>
+                        <div className="tally-sub">Клас {siz} ({SIZES.find(s=>s.id===siz)?.desc})</div>
+                      </div>
+                      <div className="tally-num">{curCount}</div>
+                    </div>
+                  )}
+                  <input
+                    className="inp"
+                    placeholder="Коментар: пляшка, кришка..."
+                    value={comment}
+                    onChange={e=>{setComment(e.target.value);commentRef.current=e.target.value;}}
+                    style={{marginBottom:12}}
+                  />
+                  <button className="btn-plus" onClick={addOne} disabled={!canTally}>
+                    {canTally?"+1":"Обери 1 · 2 · 3"}
+                  </button>
+                  <button className="btn-minus" onClick={removeOne} disabled={!canTally||curCount===0}>
+                    −1 (скасувати)
+                  </button>
+                </div>
+
+                <div className="sec" style={{marginTop:14}}>
+                  <div className="lbl">Трансект</div>
+                  <div className="mstats">
+                    <div className="mstat"><div className="mstat-n">{formTotal}</div><div className="mstat-l">Всього</div></div>
+                    <div className="mstat"><div className="mstat-n">{formPlastic}</div><div className="mstat-l">Пластик</div></div>
+                    <div className="mstat">
+                      <div className="mstat-n">{formTotal>0?Math.round(formPlastic/formTotal*100):0}%</div>
+                      <div className="mstat-l">Пласт.%</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="sec">
+                  <button className="btn-save" onClick={closeTransect}>✓ Закрити трансект</button>
+                </div>
+              </>}
+
+              {detailTab==="log"&&(
+                <div className="sec">
+                  <div className="lbl">{formTotal} предметів</div>
+                  {formTotal===0
+                    ? <div className="empty">Ще немає записів.<br/>РАХУНОК → +1</div>
+                    : (
+                      <div className="ilog">
+                        {groupItems([...activeT.items].reverse()).map((g, gIdx)=>{
+                          const isFirst = gIdx===0;
+                          const ml = MATERIALS.find(m=>m.id===g.mat);
+                          const sl = SOURCES.find(s=>s.id===g.src);
+                          const isGroup = g.count > 1;
+                          return (
+                            <div key={`${g.key}-${g.firstN}-${g.comment}`}
+                              className={`irow-item${isFirst?" last":""}${isGroup?" group":""}`}>
+                              <div className="i-num">
+                                {isGroup
+                                  ? <span>#{g.items[g.items.length-1].n}–{g.items[0].n}</span>
+                                  : <span>#{g.items[0].n}</span>
+                                }
+                              </div>
+                              <div className="i-info">
+                                <div className="i-main">
+                                  {ml?.e} {ml?.label} · {sl?.label}
+                                  {isGroup && <span className="i-badge">×{g.count}</span>}
+                                </div>
+                                {g.comment && (
+                                  <div className="i-comment">💬 {g.comment}</div>
+                                )}
+                              </div>
+                              <span className="i-sz">{g.siz}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )
+                  }
+                </div>
+              )}
+
+              {detailTab==="stats"&&(
+                <div className="sec">
+                  <div className="lbl">Концентрація (пред./250м²)</div>
+                  {formTotal===0
+                    ? <div className="empty">Додай предмети</div>
+                    : (
+                      <table className="dtbl">
+                        <thead>
+                          <tr>
+                            <th>Матеріал</th>
+                            <th>Кл.</th>
+                            <th style={{textAlign:"right"}}>N</th>
+                            <th style={{textAlign:"right"}}>конц.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {transectStats(activeT).map(s=>(
+                            <tr key={s.key}>
+                              <td>
+                                <div className="d-mat">{s.mat?.e} {s.mat?.label}</div>
+                                <div className="d-src">{s.src?.label}</div>
+                              </td>
+                              <td><span className="d-sz">{s.siz?.label}</span></td>
+                              <td className="d-n">{s.n}</td>
+                              <td className="d-conc">{s.conc}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )
+                  }
+                  <div style={{marginTop:14,padding:12,background:C.s3,borderRadius:10,
+                    fontFamily:"'Syne Mono',monospace",fontSize:10,color:C.muted,lineHeight:1.8}}>
+                    конц. = N / 250 м² (50×5 м)
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ══ DAY ══ */}
+          {tab==="day"&&<>
+            <div className="sec">
+              <div className="lbl">Параметри дня</div>
+              <input className="inp" type="date" value={date}
+                onChange={e=>setDay(e.target.value,weather)}
+                style={{marginBottom:12}}/>
+              <div className="lbl">Погода</div>
+              <div className="wx-row">
+                {WEATHER.map(w=>(
+                  <div key={w.id} style={{textAlign:"center"}}>
+                    <div className={`wx-btn${weather===w.id?" on":""}`}
+                      onClick={()=>setDay(date,w.id)}>{w.e}</div>
+                    <div className="wx-lbl">{w.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="sec">
+              <div className="lbl">День</div>
+              <div className="day-stats">
+                <div className="dstat"><div className="dstat-n">{transects.length}</div><div className="dstat-l">Трансектів</div></div>
+                <div className="dstat"><div className="dstat-n">{dayTotal}</div><div className="dstat-l">Предметів</div></div>
+                <div className="dstat blue"><div className="dstat-n">{dayPlastic}</div><div className="dstat-l">Пластику</div></div>
+                <div className="dstat amber">
+                  <div className="dstat-n">{dayTotal>0?Math.round(dayPlastic/dayTotal*100):0}%</div>
+                  <div className="dstat-l">Пласт. %</div>
+                </div>
+              </div>
+            </div>
+            {transectCount>0&&(
+              <div className="sec">
+                <div className="lbl">Середня концентрація</div>
+                <div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:12,
+                  padding:16,fontFamily:"'Syne Mono',monospace",fontSize:12,color:C.text,
+                  display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{color:C.muted,fontSize:10}}>пред./тр./250м²</span>
+                  <span style={{color:C.acc,fontSize:22,fontWeight:700}}>{avgConc}</span>
+                </div>
+                <div className="lbl" style={{marginTop:16}}>Топ типів</div>
+                <table className="dtbl">
+                  <thead>
+                    <tr>
+                      <th>Матеріал</th>
+                      <th>Кл.</th>
+                      <th style={{textAlign:"right"}}>N</th>
+                      <th style={{textAlign:"right"}}>Конц.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {typeConcs.slice(0,8).map(tc=>(
+                      <tr key={tc.key}>
+                        <td>
+                          <div className="d-mat">{tc.mat?.e} {tc.mat?.label}</div>
+                          <div className="d-src">{tc.src?.label}</div>
+                        </td>
+                        <td><span className="d-sz">{tc.siz?.label}</span></td>
+                        <td className="d-n">{tc.total}</td>
+                        <td className="d-conc">{tc.avgConc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {dayMat.length>0&&(
+              <div className="sec">
+                <div className="lbl">Структура матеріалів</div>
+                {dayMat.map(m=>(
+                  <div key={m.id} className="bar-row">
+                    <div className="bar-lbl">{m.e} {m.label}</div>
+                    <div className="bar-track">
+                      <div className="bar-fill" style={{width:`${Math.round(m.count/dayTotal*100)}%`}}/>
+                    </div>
+                    <div className="bar-val">{m.count}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>}
+
+          {/* ══ EXPORT ══ */}
+          {tab==="export"&&(
+            <div className="sec">
+              <div className="lbl">Експорт</div>
+              <div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:12,
+                padding:16,marginBottom:16,fontFamily:"'Syne Mono',monospace",
+                fontSize:12,color:C.muted,lineHeight:2}}>
+                Дата: {date}<br/>
+                Трансектів: <span style={{color:C.acc,fontWeight:700}}>{transects.length}</span><br/>
+                Предметів: <span style={{color:C.acc,fontWeight:700}}>{dayTotal}</span><br/>
+                Типів: <span style={{color:C.acc,fontWeight:700}}>{typeConcs.length}</span>
+              </div>
+              <button className="btn-export" onClick={exportTSV} disabled={transects.length===0}>
+                📊 Скопіювати дані
+              </button>
+              <div className="note-text">
+                Дані в форматі TSV (табуляція).<br/>
+                Sheets → A1 → Вставити (довгий тап)<br/>
+                Кожен предмет окремим рядком + коментар
+              </div>
+              <button className="btn-danger" onClick={resetAll}>🔄 Скинути весь день</button>
+              <div className="note-text" style={{marginTop:12}}>
+                {saveStatus==="saved"?"💾 Дані збережено":""}
+                {saveStatus==="error"?"❌ Помилка збереження!":""}
+                {saveStatus==="saving"?"⏳ Зберігаю...":""}
+                {saveStatus===""?"⚠ Ще не збережено":""}
+                {saveStatus==="local"?"📱 Локально (офлайн)":""}
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* BNAV */}
+        {tab!=="tally"&&(
+          <div className="bnav">
+            {[["zones","🗺","ЗОНИ"],["day","📊","ДЕНЬ"],["export","📤","ЗВІТ"]].map(([id,icon,label])=>(
+              <div key={id} className={`bn-item${tab===id?" on":""}`} onClick={()=>setTab(id)}>
+                <div className="bn-icon">{icon}</div>
+                <div className="bn-label">{label}</div>
+                <div className="bn-dot"/>
+              </div>
+            ))}
+          </div>
+        )}
+
+      </div>
+      {toast&&<div className="toast">{toast}</div>}
+
+      {confirmDialog&&(
+        <div className="confirm-overlay" onClick={()=>setConfirmDialog(null)}>
+          <div className="confirm-box" onClick={e=>e.stopPropagation()}>
+            <div className="confirm-msg">{confirmDialog.msg}</div>
+            <div className="confirm-btns">
+              <button className="confirm-cancel" onClick={()=>setConfirmDialog(null)}>Ні</button>
+              <button className="confirm-ok" onClick={()=>{confirmDialog.onOk();setConfirmDialog(null);}}>Так</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
