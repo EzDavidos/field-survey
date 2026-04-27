@@ -30,6 +30,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 // Expose globally so Babel-compiled code can access it
 window.DB_REF = db.collection("field_surveys").doc("current_day");
+window.DB_COL = db.collection("field_surveys");
 window.FB_OK = false;
 // Quick connection test
 window.DB_REF.get().then(function(s) {
@@ -79,15 +80,20 @@ const WEATHER = [
   { id:"wind",  e:"💨", label:"Вітер" },
 ];
 
-const C = {
+const DARK = {
   bg:"#080b10", s1:"#0f1319", s2:"#161c26", s3:"#1e2636",
   border:"#1f2940", acc:"#00e5a0", accD:"#003d2a",
   blue:"#4da6ff", blueD:"#0a2540", amber:"#f5a623",
   red:"#ff5a5a", text:"#c8d8f0", muted:"#4a607a", dim:"#2a3a52",
 };
+const LIGHT = {
+  bg:"#f0f2f5", s1:"#ffffff", s2:"#e8ecf1", s3:"#dce1e8",
+  border:"#c5cdd8", acc:"#00b37e", accD:"#d0f5e8",
+  blue:"#2680c2", blueD:"#dceefb", amber:"#c07b18",
+  red:"#d44040", text:"#1a2332", muted:"#6b7f96", dim:"#b0bcc9",
+};
 
-// ═══ ALL FONT SIZES ×2 FOR MOBILE ═══
-const G = `
+const makeCSS = (C) => `
 @import url('https://fonts.googleapis.com/css2?family=Syne+Mono&family=Outfit:wght@400;500;600;700&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:${C.bg};color:${C.text};font-family:'Outfit',sans-serif;overscroll-behavior:none}
@@ -97,17 +103,17 @@ button{font-family:'Outfit',sans-serif;cursor:pointer}
 /* TOP */
 .top{background:${C.s1};border-bottom:1px solid ${C.border};padding:16px 16px;
   display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:80}
-.top-back{background:none;border:none;color:${C.acc};font-size:22px;padding:2px 6px;line-height:1}
+.top-back{background:none;border:none;color:${C.acc};font-size:26px;padding:2px 6px;line-height:1}
 .top-info{flex:1}
-.top-title{font-family:'Syne Mono',monospace;font-size:13px;color:${C.acc};letter-spacing:.08em}
-.top-sub{font-size:11px;color:${C.muted};margin-top:4px;font-family:'Syne Mono',monospace}
+.top-title{font-family:'Syne Mono',monospace;font-size:16px;color:${C.acc};letter-spacing:.08em}
+.top-sub{font-size:13px;color:${C.muted};margin-top:4px;font-family:'Syne Mono',monospace}
 .top-badge{background:${C.acc};color:#000;font-family:'Syne Mono',monospace;
-  font-size:12px;font-weight:700;padding:6px 14px;border-radius:20px}
+  font-size:14px;font-weight:700;padding:6px 14px;border-radius:20px}
 
 /* SCROLL */
 .scroll{padding-bottom:100px}
 .sec{padding:16px 16px;border-bottom:1px solid ${C.border}}
-.lbl{font-size:11px;font-weight:700;letter-spacing:.14em;color:${C.muted};
+.lbl{font-size:13px;font-weight:700;letter-spacing:.14em;color:${C.muted};
   text-transform:uppercase;margin-bottom:12px;font-family:'Syne Mono',monospace}
 
 /* ZONE LIST */
@@ -115,50 +121,50 @@ button{font-family:'Outfit',sans-serif;cursor:pointer}
 .zone-card{background:${C.s2};border:1px solid ${C.border};border-radius:14px;
   padding:11px 14px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:all .12s}
 .zone-card:active{transform:scale(.98)}
-.zc-id{font-family:'Syne Mono',monospace;font-size:24px;font-weight:700;color:${C.acc};min-width:50px}
+.zc-id{font-family:'Syne Mono',monospace;font-size:29px;font-weight:700;color:${C.acc};min-width:50px}
 .zc-info{flex:1}
-.zc-name{font-size:14px;font-weight:600;color:${C.text}}
-.zc-type{font-size:11px;color:${C.muted};margin-top:3px}
-.zc-count{font-family:'Syne Mono',monospace;font-size:13px;color:${C.muted}}
-.zc-arr{color:${C.muted};font-size:17px}
+.zc-name{font-size:17px;font-weight:600;color:${C.text}}
+.zc-type{font-size:13px;color:${C.muted};margin-top:3px}
+.zc-count{font-family:'Syne Mono',monospace;font-size:16px;color:${C.muted}}
+.zc-arr{color:${C.muted};font-size:20px}
 
 /* TRANSECT CARDS */
 .tlist{display:flex;flex-direction:column;gap:10px}
 .tcard{background:${C.s2};border:1px solid ${C.border};border-radius:14px;padding:16px}
 .tcard.active{border-color:${C.acc}}
 .tc-head{display:flex;align-items:center;gap:10px}
-.tc-num{font-family:'Syne Mono',monospace;font-size:22px;font-weight:700;color:${C.acc};min-width:44px}
+.tc-num{font-family:'Syne Mono',monospace;font-size:26px;font-weight:700;color:${C.acc};min-width:44px}
 .tc-info{flex:1}
-.tc-title{font-size:13px;font-weight:600;color:${C.text}}
-.tc-sub{font-size:11px;color:${C.muted};margin-top:3px}
+.tc-title{font-size:16px;font-weight:600;color:${C.text}}
+.tc-sub{font-size:13px;color:${C.muted};margin-top:3px}
 .tc-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
-.tc-total{font-family:'Syne Mono',monospace;font-size:22px;font-weight:700;color:${C.acc}}
-.tc-status{font-size:10px;font-weight:700;letter-spacing:.1em;padding:5px 12px;
+.tc-total{font-family:'Syne Mono',monospace;font-size:26px;font-weight:700;color:${C.acc}}
+.tc-status{font-size:12px;font-weight:700;letter-spacing:.1em;padding:5px 12px;
   border-radius:12px;font-family:'Syne Mono',monospace}
 .tc-status.open{background:${C.accD};color:${C.acc}}
 .tc-status.closed{background:${C.dim};color:${C.muted}}
 .tc-actions{display:flex;gap:8px;margin-top:12px}
 .tc-btn{flex:1;background:none;border:1px solid ${C.border};border-radius:10px;
-  padding:12px 8px;color:${C.muted};font-size:12px;font-weight:500;transition:all .12s}
+  padding:12px 8px;color:${C.muted};font-size:14px;font-weight:500;transition:all .12s}
 .tc-btn:active{background:${C.s3}}
 .tc-btn.acc{border-color:${C.acc}55;color:${C.acc}}
 .tc-btn.danger{border-color:${C.red}33;color:${C.red}}
-.tc-note{font-size:11px;color:${C.muted};font-style:italic;margin-top:10px}
+.tc-note{font-size:13px;color:${C.muted};font-style:italic;margin-top:10px}
 
 /* TALLY DETAIL */
 .td-section{margin-top:12px;padding-top:12px;border-top:1px solid ${C.border}}
 .dtbl{width:100%;border-collapse:collapse}
-.dtbl th{font-size:10px;color:${C.muted};text-align:left;padding:6px 6px;
+.dtbl th{font-size:12px;color:${C.muted};text-align:left;padding:6px 6px;
   border-bottom:1px solid ${C.border};font-family:'Syne Mono',monospace;
   text-transform:uppercase;letter-spacing:.08em}
-.dtbl td{padding:8px 6px;border-bottom:1px solid ${C.border}15;font-size:12px;vertical-align:middle}
+.dtbl td{padding:8px 6px;border-bottom:1px solid ${C.border}15;font-size:14px;vertical-align:middle}
 .dtbl tr:last-child td{border-bottom:none}
-.d-mat{font-weight:600;color:${C.text};font-size:12px}
-.d-src{color:${C.muted};font-size:10px}
-.d-sz{font-family:'Syne Mono',monospace;font-size:11px;color:${C.blue};
+.d-mat{font-weight:600;color:${C.text};font-size:14px}
+.d-src{color:${C.muted};font-size:12px}
+.d-sz{font-family:'Syne Mono',monospace;font-size:13px;color:${C.blue};
   background:${C.blueD};border-radius:6px;padding:3px 8px;display:inline-block}
-.d-n{font-family:'Syne Mono',monospace;font-size:17px;font-weight:700;color:${C.acc};text-align:right}
-.d-conc{font-family:'Syne Mono',monospace;font-size:10px;color:${C.amber};text-align:right}
+.d-n{font-family:'Syne Mono',monospace;font-size:20px;font-weight:700;color:${C.acc};text-align:right}
+.d-conc{font-family:'Syne Mono',monospace;font-size:12px;color:${C.amber};text-align:right}
 
 /* ITEM LOG */
 .ilog{display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto;padding-right:2px}
@@ -169,27 +175,27 @@ button{font-family:'Outfit',sans-serif;cursor:pointer}
   background:${C.s3};border-radius:10px;transition:all .12s;cursor:default}
 .irow-item.last{border-left:3px solid ${C.acc}}
 .irow-item.group{background:${C.s2};border:1px solid ${C.border}}
-.i-num{font-family:'Syne Mono',monospace;font-size:10px;color:${C.muted};min-width:32px;margin-top:2px}
+.i-num{font-family:'Syne Mono',monospace;font-size:12px;color:${C.muted};min-width:32px;margin-top:2px}
 .i-info{flex:1}
-.i-main{font-size:12px;font-weight:500;color:${C.text};display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.i-badge{font-family:'Syne Mono',monospace;font-size:12px;font-weight:700;
+.i-main{font-size:14px;font-weight:500;color:${C.text};display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.i-badge{font-family:'Syne Mono',monospace;font-size:14px;font-weight:700;
   color:#000;background:${C.acc};border-radius:8px;padding:2px 10px}
-.i-comment{font-size:11px;color:${C.amber};margin-top:6px;padding-top:6px;
+.i-comment{font-size:13px;color:${C.amber};margin-top:6px;padding-top:6px;
   border-top:1px solid ${C.border};line-height:1.5}
-.i-sz{font-family:'Syne Mono',monospace;font-size:11px;color:${C.blue};
+.i-sz{font-family:'Syne Mono',monospace;font-size:13px;color:${C.blue};
   background:${C.blueD};border-radius:6px;padding:2px 8px;flex-shrink:0;margin-top:2px}
 
 /* STEP / CHIPS */
 .step-hdr{display:flex;align-items:center;gap:12px;margin-bottom:12px}
 .step-n{width:26px;height:26px;border-radius:50%;background:${C.acc};color:#000;
-  font-family:'Syne Mono',monospace;font-size:11px;font-weight:700;
+  font-family:'Syne Mono',monospace;font-size:13px;font-weight:700;
   display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .step-n.off{background:${C.dim};color:${C.muted}}
-.step-title{font-size:13px;font-weight:600;color:${C.text}}
-.step-sel{font-size:12px;color:${C.acc};font-family:'Syne Mono',monospace;margin-left:auto}
+.step-title{font-size:16px;font-weight:600;color:${C.text}}
+.step-sel{font-size:14px;color:${C.acc};font-family:'Syne Mono',monospace;margin-left:auto}
 .chips{display:flex;flex-wrap:wrap;gap:10px}
 .chip{background:${C.s2};border:1px solid ${C.border};border-radius:24px;
-  padding:9px 15px;cursor:pointer;font-size:13px;color:${C.text};
+  padding:9px 15px;cursor:pointer;font-size:16px;color:${C.text};
   transition:all .12s;user-select:none;font-weight:500}
 .chip:active{transform:scale(.93)}
 .chip.on{border-color:${C.acc};background:${C.accD};color:${C.acc}}
@@ -198,47 +204,47 @@ button{font-family:'Outfit',sans-serif;cursor:pointer}
   padding:11px 8px;cursor:pointer;text-align:center;transition:all .12s}
 .szbtn:active{transform:scale(.95)}
 .szbtn.on{border-color:${C.blue};background:${C.blueD}}
-.sz-l{font-family:'Syne Mono',monospace;font-size:22px;font-weight:700;color:${C.text}}
+.sz-l{font-family:'Syne Mono',monospace;font-size:26px;font-weight:700;color:${C.text}}
 .szbtn.on .sz-l{color:${C.blue}}
-.sz-d{font-size:11px;color:${C.muted};margin-top:4px}
+.sz-d{font-size:13px;color:${C.muted};margin-top:4px}
 
 /* REMEMBER */
 .rem-row{display:flex;align-items:center;gap:10px;margin-top:10px;
   padding:10px 14px;background:${C.s3};border-radius:10px;cursor:pointer;user-select:none}
 .rem-check{width:20px;height:20px;border-radius:6px;border:2px solid ${C.border};
   background:${C.s2};display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;font-size:11px;transition:all .12s}
+  flex-shrink:0;font-size:13px;transition:all .12s}
 .rem-check.on{background:${C.acc};border-color:${C.acc};color:#000}
-.rem-label{font-size:12px;color:${C.muted};font-family:'Syne Mono',monospace}
+.rem-label{font-size:14px;color:${C.muted};font-family:'Syne Mono',monospace}
 
 /* TALLY BOX */
 .tally-box{background:${C.s2};border:1px solid ${C.border};border-radius:14px;
   padding:16px;margin:0 16px}
 .tally-top{display:flex;align-items:center;gap:14px;margin-bottom:14px}
 .tally-desc{flex:1}
-.tally-combo{font-size:14px;font-weight:600;color:${C.text}}
-.tally-sub{font-size:11px;color:${C.muted};margin-top:4px}
-.tally-num{font-family:'Syne Mono',monospace;font-size:43px;font-weight:700;
+.tally-combo{font-size:17px;font-weight:600;color:${C.text}}
+.tally-sub{font-size:13px;color:${C.muted};margin-top:4px}
+.tally-num{font-family:'Syne Mono',monospace;font-size:52px;font-weight:700;
   color:${C.acc};line-height:1;min-width:80px;text-align:right}
 .btn-plus{width:100%;background:${C.acc};color:#000;border:none;border-radius:14px;
-  padding:16px;font-size:24px;font-weight:700;font-family:'Syne Mono',monospace;transition:all .1s}
+  padding:16px;font-size:29px;font-weight:700;font-family:'Syne Mono',monospace;transition:all .1s}
 .btn-plus:active{transform:scale(.97);background:#00c488}
 .btn-plus:disabled{opacity:.25;cursor:not-allowed;background:${C.dim};color:${C.muted}}
 .btn-minus{width:100%;background:none;border:1px solid ${C.border};color:${C.red};
-  border-radius:12px;padding:16px;font-size:14px;font-weight:500;margin-top:10px;transition:all .12s}
+  border-radius:12px;padding:16px;font-size:17px;font-weight:500;margin-top:10px;transition:all .12s}
 .btn-minus:disabled{opacity:.2;cursor:not-allowed}
 
 /* MINI STATS */
 .mstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .mstat{background:${C.s2};border:1px solid ${C.border};border-radius:12px;
   padding:14px;text-align:center}
-.mstat-n{font-family:'Syne Mono',monospace;font-size:23px;font-weight:700;color:${C.acc}}
-.mstat-l{font-size:8px;color:${C.muted};margin-top:4px;text-transform:uppercase;
+.mstat-n{font-family:'Syne Mono',monospace;font-size:28px;font-weight:700;color:${C.acc}}
+.mstat-l{font-size:10px;color:${C.muted};margin-top:4px;text-transform:uppercase;
   letter-spacing:.08em;font-family:'Syne Mono',monospace}
 
 /* INPUTS */
 .inp{background:${C.s2};border:1px solid ${C.border};border-radius:10px;
-  padding:14px 16px;color:${C.text};font-size:14px;font-family:'Outfit',sans-serif;
+  padding:14px 16px;color:${C.text};font-size:17px;font-family:'Outfit',sans-serif;
   outline:none;width:100%;-webkit-appearance:none}
 .inp:focus{border-color:${C.acc}}
 .inp::placeholder{color:${C.muted}}
@@ -246,42 +252,42 @@ textarea.inp{resize:none;line-height:1.5}
 
 /* BUTTONS */
 .btn-save{width:100%;background:${C.acc};color:#000;border:none;border-radius:14px;
-  padding:14px;font-size:16px;font-weight:700;font-family:'Outfit',sans-serif;transition:all .12s}
+  padding:14px;font-size:19px;font-weight:700;font-family:'Outfit',sans-serif;transition:all .12s}
 .btn-save:active{transform:scale(.98)}
 .btn-new{width:100%;background:none;border:1px dashed ${C.acc}55;border-radius:14px;
-  padding:12px;color:${C.acc};font-size:14px;font-weight:600;
+  padding:12px;color:${C.acc};font-size:17px;font-weight:600;
   font-family:'Outfit',sans-serif;transition:all .12s;margin-top:6px}
 .btn-new:active{background:${C.accD}}
 
 /* DAY */
 .wx-row{display:flex;gap:10px}
 .wx-btn{background:${C.s2};border:1px solid ${C.border};border-radius:12px;
-  padding:14px 18px;font-size:18px;transition:all .12s;text-align:center}
+  padding:14px 18px;font-size:22px;transition:all .12s;text-align:center}
 .wx-btn.on{border-color:${C.amber}}
-.wx-lbl{font-size:10px;color:${C.muted};margin-top:4px;font-family:'Syne Mono',monospace}
+.wx-lbl{font-size:12px;color:${C.muted};margin-top:4px;font-family:'Syne Mono',monospace}
 .day-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .dstat{background:${C.s2};border:1px solid ${C.border};border-radius:12px;padding:16px}
-.dstat-n{font-family:'Syne Mono',monospace;font-size:26px;font-weight:700;color:${C.acc}}
-.dstat-l{font-size:11px;color:${C.muted};margin-top:4px;text-transform:uppercase;
+.dstat-n{font-family:'Syne Mono',monospace;font-size:31px;font-weight:700;color:${C.acc}}
+.dstat-l{font-size:13px;color:${C.muted};margin-top:4px;text-transform:uppercase;
   letter-spacing:.07em;font-family:'Syne Mono',monospace}
 .dstat.blue .dstat-n{color:${C.blue}}
 .dstat.amber .dstat-n{color:${C.amber}}
 .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.bar-lbl{font-size:12px;color:${C.text};min-width:100px;font-weight:500}
+.bar-lbl{font-size:14px;color:${C.text};min-width:100px;font-weight:500}
 .bar-track{flex:1;height:10px;background:${C.s3};border-radius:5px;overflow:hidden}
 .bar-fill{height:100%;border-radius:5px;background:${C.acc};transition:width .4s}
-.bar-val{font-family:'Syne Mono',monospace;font-size:12px;color:${C.acc};min-width:36px;text-align:right}
+.bar-val{font-family:'Syne Mono',monospace;font-size:14px;color:${C.acc};min-width:36px;text-align:right}
 
 /* EXPORT */
 .btn-export{width:100%;background:${C.s2};color:${C.acc};border:1px solid ${C.acc}55;
-  border-radius:14px;padding:14px;font-size:14px;font-weight:600;
+  border-radius:14px;padding:14px;font-size:17px;font-weight:600;
   font-family:'Outfit',sans-serif;margin-bottom:10px;transition:all .12s}
 .btn-export:active{background:${C.accD}}
 .btn-danger{width:100%;background:none;color:${C.red};border:1px solid ${C.red}30;
-  border-radius:14px;padding:12px;font-size:13px;font-weight:600;
+  border-radius:14px;padding:12px;font-size:16px;font-weight:600;
   font-family:'Outfit',sans-serif;opacity:.7;transition:all .12s;margin-top:10px}
 .btn-danger:active{opacity:1}
-.note-text{font-size:11px;color:${C.muted};line-height:1.7;
+.note-text{font-size:13px;color:${C.muted};line-height:1.7;
   font-family:'Syne Mono',monospace;margin-top:14px}
 
 /* BNAV */
@@ -290,23 +296,23 @@ textarea.inp{resize:none;line-height:1.5}
   display:flex;z-index:80;padding-bottom:env(safe-area-inset-bottom)}
 .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;
   padding:12px 4px 10px;cursor:pointer}
-.bn-icon{font-size:17px;line-height:1}
-.bn-label{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+.bn-icon{font-size:20px;line-height:1}
+.bn-label{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
   color:${C.muted};margin-top:4px;font-family:'Syne Mono',monospace}
 .bn-item.on .bn-label{color:${C.acc}}
 .bn-dot{width:5px;height:5px;background:${C.acc};border-radius:50%;margin-top:4px;opacity:0}
 .bn-item.on .bn-dot{opacity:1}
 
 .empty{text-align:center;padding:40px 20px;color:${C.muted};
-  font-size:12px;font-family:'Syne Mono',monospace;line-height:1.9}
+  font-size:14px;font-family:'Syne Mono',monospace;line-height:1.9}
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
   background:${C.acc};color:#000;padding:10px 20px;border-radius:24px;
-  font-size:13px;font-weight:700;z-index:200;pointer-events:none;
+  font-size:16px;font-weight:700;z-index:200;pointer-events:none;
   animation:su .2s ease;font-family:'Syne Mono',monospace;white-space:nowrap}
 @keyframes su{from{opacity:0;transform:translateX(-50%) translateY(12px)}
   to{opacity:1;transform:translateX(-50%) translateY(0)}}
 .loading{display:flex;align-items:center;justify-content:center;
-  height:100vh;font-family:'Syne Mono',monospace;color:${C.acc};font-size:13px}
+  height:100vh;font-family:'Syne Mono',monospace;color:${C.acc};font-size:16px}
 
 /* CONFIRM DIALOG */
 .confirm-overlay{position:fixed;top:0;left:0;right:0;bottom:0;
@@ -315,12 +321,12 @@ textarea.inp{resize:none;line-height:1.5}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 .confirm-box{background:${C.s1};border:1px solid ${C.border};border-radius:18px;
   padding:20px 18px;max-width:360px;width:100%;text-align:center}
-.confirm-msg{font-size:14px;color:${C.text};margin-bottom:22px;line-height:1.5}
+.confirm-msg{font-size:17px;color:${C.text};margin-bottom:22px;line-height:1.5}
 .confirm-btns{display:flex;gap:12px}
 .confirm-cancel{flex:1;background:${C.s2};border:1px solid ${C.border};border-radius:12px;
-  padding:16px;color:${C.muted};font-size:13px;font-weight:600}
+  padding:16px;color:${C.muted};font-size:16px;font-weight:600}
 .confirm-ok{flex:1;background:${C.red};border:none;border-radius:12px;
-  padding:16px;color:#fff;font-size:13px;font-weight:700}
+  padding:16px;color:#fff;font-size:16px;font-weight:700}
 `;
 
 // ─── HELPERS ─────────────────────────────────────────────────
@@ -370,6 +376,20 @@ function App() {
   const [detailTab,setDetailTab]= useState("tally");
   const [expanded, setExpanded] = useState({});
   const [toast,    setToast]    = useState(null);
+
+  // Theme
+  const [theme, setTheme] = useState(()=> localStorage.getItem("fs_theme")||"dark");
+  const C = theme==="dark" ? DARK : LIGHT;
+  const G = makeCSS(C);
+  const toggleTheme = () => {
+    const next = theme==="dark"?"light":"dark";
+    setTheme(next);
+    localStorage.setItem("fs_theme", next);
+  };
+
+  // Multi-day
+  const [allDays, setAllDays] = useState([]); // [{date,weather,transects}]
+  const [statsMode, setStatsMode] = useState("today"); // "today" | "all"
 
   const [date,      setDate]      = useState(todayStr());
   const [weather,   setWeather]   = useState(null);
@@ -462,16 +482,39 @@ function App() {
   const persist = useCallback(async (ts,dt,wx,rem) => {
     setSaveStatus("saving");
     const data = { date:dt, weather:wx, transects:ts, remembered:rem, updatedAt: new Date().toISOString() };
-    // Always save to localStorage (instant, offline-safe)
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {}
-    // Save to Firebase (cloud)
     try {
+      // Save to main doc (current session)
       await window.DB_REF.set(data);
+      // Also save to per-day doc for multi-day stats
+      if (dt && ts.length > 0) {
+        const dayRef = window.DB_COL.doc("day_" + dt);
+        await dayRef.set({ date:dt, weather:wx, transects:ts, updatedAt: new Date().toISOString() });
+      }
       setSaveStatus("saved");
-      addLog("☁️ Збережено в Firebase (" + ts.length + " тр.)");
+      addLog("☁️ Збережено (" + ts.length + " тр.)");
     } catch(e) {
       setSaveStatus("local");
-      addLog("⚠ Firebase save fail: " + (e.code || e.message || String(e)));
+      addLog("⚠ Save fail: " + (e.code || e.message || String(e)));
+    }
+  },[]);
+
+  // Load all days for aggregate stats
+  const loadAllDays = useCallback(async () => {
+    try {
+      const snap = await window.DB_COL.get();
+      const days = [];
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (doc.id.startsWith("day_") && d.transects && d.transects.length > 0) {
+          days.push({ date:d.date, weather:d.weather, transects:d.transects });
+        }
+      });
+      days.sort((a,b) => a.date.localeCompare(b.date));
+      setAllDays(days);
+      addLog("📊 Завантажено " + days.length + " днів");
+    } catch(e) {
+      addLog("⚠ Load days: " + (e.code||e.message||String(e)));
     }
   },[]);
 
@@ -692,16 +735,20 @@ function App() {
               {tab==="zones" && `${date} · ${weather?WEATHER.find(w=>w.id===weather)?.label:"погода?"}`}
               {tab==="zone"  && `${zoneTs.length} трансект(ів)`}
               {tab==="tally" && `${formTotal} предм. · ${activeT?.open?"● відкр.":"закр."}`}
-              {tab==="day"   && `${transects.length} тр. · ${dayTotal} предм.`}
+              {tab==="day"   && `${statsMode==="all"?allDays.length+" днів":transects.length+" тр."} · ${statsMode==="all"?allDays.flatMap(d=>d.transects).flatMap(t=>t.items).length:dayTotal} предм.`}
               {tab==="export"&& "CSV лог + конц."}
             </div>
           </div>
           {dayTotal>0&&["zones","day","export"].includes(tab)&&
             <div className="top-badge">{dayTotal}</div>}
-          <div style={{fontSize:9,fontFamily:"'Syne Mono',monospace",
-            color:saveStatus==="error"?C.red:saveStatus==="saved"?C.acc:saveStatus==="local"?C.amber:C.muted,
-            minWidth:12,textAlign:"right"}}>
-            {saveStatus==="saving"?"⏳":saveStatus==="saved"?"☁️":saveStatus==="local"?"📱":saveStatus==="error"?"❌":""}
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{cursor:"pointer",fontSize:18,lineHeight:1}} onClick={toggleTheme}>
+              {theme==="dark"?"☀️":"🌙"}
+            </div>
+            <div style={{fontSize:11,fontFamily:"'Syne Mono',monospace",
+              color:saveStatus==="error"?C.red:saveStatus==="saved"?C.acc:saveStatus==="local"?C.amber:C.muted}}>
+              {saveStatus==="saving"?"⏳":saveStatus==="saved"?"☁️":saveStatus==="local"?"📱":saveStatus==="error"?"❌":""}
+            </div>
           </div>
         </div>
 
@@ -810,7 +857,7 @@ function App() {
                 {[["tally","РАХУНОК"],["log","ЛОГ"],["stats","СТАТ."]].map(([id,label])=>(
                   <div key={id}
                     style={{flex:1,padding:"14px 4px",textAlign:"center",cursor:"pointer",
-                      fontFamily:"'Syne Mono',monospace",fontSize:11,fontWeight:700,
+                      fontFamily:"'Syne Mono',monospace",fontSize:13,fontWeight:700,
                       letterSpacing:".1em",color:detailTab===id?C.acc:C.muted,
                       borderBottom:`3px solid ${detailTab===id?C.acc:"transparent"}`,
                       transition:"all .15s"}}
@@ -818,7 +865,7 @@ function App() {
                     {label}
                     {id==="log"&&formTotal>0&&
                       <span style={{marginLeft:6,background:C.acc,color:"#000",
-                        fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10}}>
+                        fontSize:12,fontWeight:700,padding:"2px 8px",borderRadius:10}}>
                         {formTotal}
                       </span>}
                   </div>
@@ -873,7 +920,7 @@ function App() {
                   <div className="step-hdr">
                     <div className={`step-n${siz?"":" off"}`}>3</div>
                     <div className="step-title">Розмір</div>
-                    <span style={{fontSize:10,color:C.muted,fontFamily:"'Syne Mono',monospace",marginLeft:"auto"}}>
+                    <span style={{fontSize:12,color:C.muted,fontFamily:"'Syne Mono',monospace",marginLeft:"auto"}}>
                       NOAA 2013
                     </span>
                   </div>
@@ -1008,7 +1055,7 @@ function App() {
                     )
                   }
                   <div style={{marginTop:14,padding:12,background:C.s3,borderRadius:10,
-                    fontFamily:"'Syne Mono',monospace",fontSize:10,color:C.muted,lineHeight:1.8}}>
+                    fontFamily:"'Syne Mono',monospace",fontSize:12,color:C.muted,lineHeight:1.8}}>
                     конц. = N / 250 м² (50×5 м)
                   </div>
                 </div>
@@ -1017,7 +1064,32 @@ function App() {
           )}
 
           {/* ══ DAY ══ */}
-          {tab==="day"&&<>
+          {tab==="day"&&(()=>{
+            // Compute stats based on mode
+            const isAll = statsMode==="all";
+            const allTs = isAll ? allDays.flatMap(d=>d.transects) : transects;
+            const allIt = allTs.flatMap(t=>t.items);
+            const stTotal = allIt.length;
+            const stPlastic = allIt.filter(i=>i.mat==="plastic").length;
+            const stTrCount = allTs.length;
+            const stAvgConc = stTrCount>0 ? (stTotal/stTrCount/AREA).toFixed(4) : "—";
+            const stTallies = allTs.reduce((acc,t)=>{
+              Object.entries(t.tallies).forEach(([k,v])=>{acc[k]=(acc[k]||0)+v;});
+              return acc;
+            },{});
+            const stMat = matStats(stTallies);
+            const stTypeConcs = Object.entries(stTallies).map(([k,total])=>{
+              const [mId,sId,szId]=k.split("|");
+              return {
+                key:k, total,
+                mat: MATERIALS.find(m=>m.id===mId),
+                src: SOURCES.find(s=>s.id===sId),
+                siz: SIZES.find(s=>s.id===szId),
+                avgConc: stTrCount>0?(total/stTrCount/AREA).toFixed(4):"—",
+              };
+            }).sort((a,b)=>b.total-a.total);
+
+            return <>
             <div className="sec">
               <div className="lbl">Параметри дня</div>
               <input className="inp" type="date" value={date}
@@ -1034,26 +1106,48 @@ function App() {
                 ))}
               </div>
             </div>
+
+            {/* STATS MODE TOGGLE */}
+            <div className="sec" style={{paddingBottom:10}}>
+              <div style={{display:"flex",gap:8}}>
+                {[["today","📅 Сьогодні"],["all","📊 Весь період"]].map(([id,label])=>(
+                  <div key={id}
+                    className={`chip${statsMode===id?" on":""}`}
+                    style={{flex:1,textAlign:"center",fontSize:13}}
+                    onClick={()=>{
+                      setStatsMode(id);
+                      if (id==="all" && allDays.length===0) loadAllDays();
+                    }}>
+                    {label}
+                  </div>
+                ))}
+              </div>
+              {isAll && <div style={{fontSize:11,color:C.muted,fontFamily:"'Syne Mono',monospace",
+                marginTop:8,textAlign:"center"}}>
+                {allDays.length} днів · {allDays.map(d=>d.date).join(", ")}
+              </div>}
+            </div>
+
             <div className="sec">
-              <div className="lbl">День</div>
+              <div className="lbl">{isAll?"Весь період":"День"}</div>
               <div className="day-stats">
-                <div className="dstat"><div className="dstat-n">{transects.length}</div><div className="dstat-l">Трансектів</div></div>
-                <div className="dstat"><div className="dstat-n">{dayTotal}</div><div className="dstat-l">Предметів</div></div>
-                <div className="dstat blue"><div className="dstat-n">{dayPlastic}</div><div className="dstat-l">Пластику</div></div>
+                <div className="dstat"><div className="dstat-n">{stTrCount}</div><div className="dstat-l">Трансектів</div></div>
+                <div className="dstat"><div className="dstat-n">{stTotal}</div><div className="dstat-l">Предметів</div></div>
+                <div className="dstat blue"><div className="dstat-n">{stPlastic}</div><div className="dstat-l">Пластику</div></div>
                 <div className="dstat amber">
-                  <div className="dstat-n">{dayTotal>0?Math.round(dayPlastic/dayTotal*100):0}%</div>
+                  <div className="dstat-n">{stTotal>0?Math.round(stPlastic/stTotal*100):0}%</div>
                   <div className="dstat-l">Пласт. %</div>
                 </div>
               </div>
             </div>
-            {transectCount>0&&(
+            {stTrCount>0&&(
               <div className="sec">
                 <div className="lbl">Середня концентрація</div>
                 <div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:12,
-                  padding:16,fontFamily:"'Syne Mono',monospace",fontSize:12,color:C.text,
+                  padding:16,fontFamily:"'Syne Mono',monospace",fontSize:14,color:C.text,
                   display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{color:C.muted,fontSize:10}}>пред./тр./250м²</span>
-                  <span style={{color:C.acc,fontSize:22,fontWeight:700}}>{avgConc}</span>
+                  <span style={{color:C.muted,fontSize:12}}>пред./тр./250м²</span>
+                  <span style={{color:C.acc,fontSize:26,fontWeight:700}}>{stAvgConc}</span>
                 </div>
                 <div className="lbl" style={{marginTop:16}}>Топ типів</div>
                 <table className="dtbl">
@@ -1066,7 +1160,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {typeConcs.slice(0,8).map(tc=>(
+                    {stTypeConcs.slice(0,10).map(tc=>(
                       <tr key={tc.key}>
                         <td>
                           <div className="d-mat">{tc.mat?.e} {tc.mat?.label}</div>
@@ -1081,21 +1175,22 @@ function App() {
                 </table>
               </div>
             )}
-            {dayMat.length>0&&(
+            {stMat.length>0&&(
               <div className="sec">
                 <div className="lbl">Структура матеріалів</div>
-                {dayMat.map(m=>(
+                {stMat.map(m=>(
                   <div key={m.id} className="bar-row">
                     <div className="bar-lbl">{m.e} {m.label}</div>
                     <div className="bar-track">
-                      <div className="bar-fill" style={{width:`${Math.round(m.count/dayTotal*100)}%`}}/>
+                      <div className="bar-fill" style={{width:`${Math.round(m.count/stTotal*100)}%`}}/>
                     </div>
                     <div className="bar-val">{m.count}</div>
                   </div>
                 ))}
               </div>
             )}
-          </>}
+          </>;
+          })()}
 
           {/* ══ EXPORT ══ */}
           {tab==="export"&&(
@@ -1103,7 +1198,7 @@ function App() {
               <div className="lbl">Експорт</div>
               <div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:12,
                 padding:16,marginBottom:16,fontFamily:"'Syne Mono',monospace",
-                fontSize:12,color:C.muted,lineHeight:2}}>
+                fontSize:14,color:C.muted,lineHeight:2}}>
                 Дата: {date}<br/>
                 Трансектів: <span style={{color:C.acc,fontWeight:700}}>{transects.length}</span><br/>
                 Предметів: <span style={{color:C.acc,fontWeight:700}}>{dayTotal}</span><br/>
@@ -1127,7 +1222,7 @@ function App() {
               </div>
               {/* DIAGNOSTIC LOG */}
               <div style={{marginTop:16,padding:12,background:C.s3,borderRadius:10,
-                fontFamily:"'Syne Mono',monospace",fontSize:10,color:C.muted,lineHeight:2}}>
+                fontFamily:"'Syne Mono',monospace",fontSize:12,color:C.muted,lineHeight:2}}>
                 <div style={{color:C.text,fontWeight:700,marginBottom:4}}>🔧 ДІАГНОСТИКА</div>
                 {dbLog.map((l,i) => <div key={i}>{l}</div>)}
                 {dbLog.length===0 && <div>Порожньо...</div>}
