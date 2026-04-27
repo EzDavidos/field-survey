@@ -23,11 +23,22 @@ const firebaseConfig = {
   projectId: "field-survey-74867",
   storageBucket: "field-survey-74867.firebasestorage.app",
   messagingSenderId: "354645098970",
-  appId: "1:354645098970:web:b29fa6c73b213c10cf00e3"
+  appId: "1:354645098970:web:b29fa6c73b213c10cf00e3",
+  measurementId: "G-306LB2JRLT"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-const DOC_REF = db.collection("field_surveys").doc("current_day");
+// Expose globally so Babel-compiled code can access it
+window.DB_REF = db.collection("field_surveys").doc("current_day");
+window.FB_OK = false;
+// Quick connection test
+window.DB_REF.get().then(function(s) {
+  window.FB_OK = true;
+  console.log("✅ Firebase connected. Doc exists:", s.exists);
+}).catch(function(e) {
+  window.FB_OK = false;
+  console.error("❌ Firebase error:", e.code, e.message);
+});
 </script>
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
@@ -382,12 +393,19 @@ function App() {
   const remSrc = remembered.src !== null;
   const remSiz = remembered.siz !== null;
 
+  const [dbLog, setDbLog] = useState([]); // diagnostic log
+
+  const addLog = (msg) => setDbLog(prev => [...prev.slice(-6), new Date().toLocaleTimeString() + " " + msg]);
+
   // ── STORAGE: Firebase Firestore + localStorage fallback ──
   useEffect(()=>{
     (async()=>{
+      addLog("⏳ Завантаження...");
+      let loaded_from = null;
+      // Try Firebase
       try {
-        // Try Firebase first
-        const snap = await DOC_REF.get();
+        addLog("☁️ Firebase .get()...");
+        const snap = await window.DB_REF.get();
         if (snap.exists) {
           const d = snap.data();
           if (d.date)       setDate(d.date);
@@ -400,25 +418,16 @@ function App() {
             if (d.remembered.siz) setSiz(d.remembered.siz);
           }
           setSaveStatus("saved");
+          loaded_from = "firebase";
+          addLog("✅ Дані з Firebase (" + (d.transects?.length||0) + " тр.)");
         } else {
-          // Try localStorage fallback
-          const raw = localStorage.getItem(STORAGE_KEY);
-          if (raw) {
-            const d = JSON.parse(raw);
-            if (d.date) setDate(d.date);
-            if (d.weather) setWeather(d.weather);
-            if (d.transects && d.transects.length > 0) setTransects(d.transects);
-            if (d.remembered) {
-              setRemembered(d.remembered);
-              if (d.remembered.mat) setMat(d.remembered.mat);
-              if (d.remembered.src) setSrc(d.remembered.src);
-              if (d.remembered.siz) setSiz(d.remembered.siz);
-            }
-          }
-          setSaveStatus("");
+          addLog("📄 Firebase порожній (новий документ)");
         }
       } catch(e) {
-        console.warn("Firebase load failed, trying localStorage", e);
+        addLog("❌ Firebase: " + (e.code || e.message || String(e)));
+      }
+      // Fallback to localStorage if Firebase didn't load
+      if (!loaded_from) {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
           if (raw) {
@@ -433,9 +442,18 @@ function App() {
               if (d.remembered.siz) setSiz(d.remembered.siz);
             }
             setSaveStatus("local");
+            loaded_from = "local";
+            addLog("📱 Дані з localStorage (" + (d.transects?.length||0) + " тр.)");
+          } else {
+            addLog("📱 localStorage порожній");
           }
-        } catch(e2) {}
-        setSaveStatus("error");
+        } catch(e2) {
+          addLog("❌ localStorage: " + String(e2));
+        }
+      }
+      if (!loaded_from) {
+        addLog("🆕 Чистий старт — даних немає");
+        setSaveStatus("");
       }
       setLoaded(true);
     })();
@@ -448,11 +466,12 @@ function App() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {}
     // Save to Firebase (cloud)
     try {
-      await DOC_REF.set(data);
+      await window.DB_REF.set(data);
       setSaveStatus("saved");
+      addLog("☁️ Збережено в Firebase (" + ts.length + " тр.)");
     } catch(e) {
-      console.warn("Firebase save failed", e);
       setSaveStatus("local");
+      addLog("⚠ Firebase save fail: " + (e.code || e.message || String(e)));
     }
   },[]);
 
@@ -610,16 +629,23 @@ function App() {
   const exportTSV = () => {
     const T = "\t";
     const clean = s => String(s||"").replace(/\t/g," ").replace(/\n/g," ");
-    const h1 = ["Дата","Зона","Трансект_№","Час","Примітка_трансект","Предмет_№","Матеріал","Джерело","Розмір","Коментар"].join(T);
-    const rows1 = transects.flatMap(t=>
-      t.items.map(i=>{
-        const zn = ZONES.find(z=>z.id===t.zoneId)?.name||t.zoneId;
+    const h1 = ["Дата","Зона","Трансект_№","Час","№","Матеріал","Джерело","Розмір","Примітка"].join(T);
+    const rows1 = transects.flatMap(t=>{
+      const zn = ZONES.find(z=>z.id===t.zoneId)?.name||t.zoneId;
+      const lines = [];
+      // Transect note as a separate row (if exists)
+      if (t.note && t.note.trim()) {
+        lines.push([date,clean(zn),t.num,t.time,"","[ТРАНСЕКТ]","","","Примітка: "+clean(t.note)].join(T));
+      }
+      // Item rows — each with its own comment as "Примітка"
+      t.items.forEach(i=>{
         const ml = MATERIALS.find(m=>m.id===i.mat)?.label||i.mat;
         const sl = SOURCES.find(s=>s.id===i.src)?.label||i.src;
-        return [date,clean(zn),t.num,t.time,clean(t.note),i.n,ml,sl,i.siz,clean(i.comment)].join(T);
-      })
-    );
-    const h2 = "\n" + ["СТАТИСТИКА КОНЦЕНТРАЦІЇ (пред./250м²)"].join(T);
+        lines.push([date,clean(zn),t.num,t.time,i.n,ml,sl,i.siz,clean(i.comment)].join(T));
+      });
+      return lines;
+    });
+    const h2 = "\n" + "СТАТИСТИКА КОНЦЕНТРАЦІЇ (пред./250м²)";
     const h3 = ["Матеріал","Джерело","Розмір","Всього","Сер.конц."].join(T);
     const rows2 = typeConcs.map(tc=>
       [tc.mat?.label||"—",tc.src?.label||"—",tc.siz?.label||"—",tc.total,tc.avgConc].join(T)
@@ -1087,17 +1113,24 @@ function App() {
                 📊 Скопіювати дані
               </button>
               <div className="note-text">
-                Дані в форматі TSV (табуляція).<br/>
                 Sheets → A1 → Вставити (довгий тап)<br/>
-                Кожен предмет окремим рядком + коментар
+                Кожен предмет = окремий рядок + примітка<br/>
+                Примітка трансекта — окремим рядком
               </div>
               <button className="btn-danger" onClick={resetAll}>🔄 Скинути весь день</button>
               <div className="note-text" style={{marginTop:12}}>
-                {saveStatus==="saved"?"💾 Дані збережено":""}
-                {saveStatus==="error"?"❌ Помилка збереження!":""}
+                {saveStatus==="saved"?"☁️ Дані в Firebase":""}
+                {saveStatus==="error"?"❌ Помилка Firebase!":""}
                 {saveStatus==="saving"?"⏳ Зберігаю...":""}
-                {saveStatus===""?"⚠ Ще не збережено":""}
+                {saveStatus===""?"🆕 Новий сеанс":""}
                 {saveStatus==="local"?"📱 Локально (офлайн)":""}
+              </div>
+              {/* DIAGNOSTIC LOG */}
+              <div style={{marginTop:16,padding:12,background:C.s3,borderRadius:10,
+                fontFamily:"'Syne Mono',monospace",fontSize:10,color:C.muted,lineHeight:2}}>
+                <div style={{color:C.text,fontWeight:700,marginBottom:4}}>🔧 ДІАГНОСТИКА</div>
+                {dbLog.map((l,i) => <div key={i}>{l}</div>)}
+                {dbLog.length===0 && <div>Порожньо...</div>}
               </div>
             </div>
           )}
