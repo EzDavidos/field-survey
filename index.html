@@ -27,7 +27,19 @@ const firebaseConfig = {
   measurementId: "G-306LB2JRLT"
 };
 firebase.initializeApp(firebaseConfig);
-window.DB = firebase.firestore().collection("field_surveys");
+const db = firebase.firestore();
+// Expose globally so Babel-compiled code can access it
+window.DB_REF = db.collection("field_surveys").doc("current_day");
+window.DB_COL = db.collection("field_surveys");
+window.FB_OK = false;
+// Quick connection test
+window.DB_REF.get().then(function(s) {
+  window.FB_OK = true;
+  console.log("✅ Firebase connected. Doc exists:", s.exists);
+}).catch(function(e) {
+  window.FB_OK = false;
+  console.error("❌ Firebase error:", e.code, e.message);
+});
 </script>
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
@@ -375,8 +387,9 @@ function App() {
     localStorage.setItem("fs_theme", next);
   };
 
-  // Multi-day aggregate
-  
+  // Multi-day
+  const [allDays, setAllDays] = useState([]); // [{date,weather,transects}]
+  const [statsMode, setStatsMode] = useState("today"); // "today" | "all"
 
   const [date,      setDate]      = useState(todayStr());
   const [weather,   setWeather]   = useState(null);
@@ -400,158 +413,114 @@ function App() {
   const remSrc = remembered.src !== null;
   const remSiz = remembered.siz !== null;
 
-  // ── STORAGE: per-day Firestore docs ──
-  // Structure: DB/day_YYYY-MM-DD → {date, weather, transects}
-  //            DB/settings       → {remembered}
+  const [dbLog, setDbLog] = useState([]); // diagnostic log
 
-  // Helper: load a specific day from Firestore
-  const loadDay = async (dt) => {
-    try {
-      const snap = await window.DB.doc("day_" + dt).get();
-      if (snap.exists) {
-        const d = snap.data();
-        return { weather: d.weather||null, transects: d.transects||[] };
-      }
-    } catch(e) {
-      addLog("❌ Load day_" + dt + ": " + (e.code||e.message||""));
-    }
-    return { weather: null, transects: [] };
-  };
+  const addLog = (msg) => setDbLog(prev => [...prev.slice(-6), new Date().toLocaleTimeString() + " " + msg]);
 
-  // Save current day data to Firestore
-  const saveDay = async (dt, wx, ts) => {
-    setSaveStatus("saving");
-    try {
-      await window.DB.doc("day_" + dt).set({ date:dt, weather:wx, transects:ts, updatedAt: new Date().toISOString() });
-      setSaveStatus("saved");
-    } catch(e) {
-      setSaveStatus("local");
-      addLog("⚠ Save fail: " + (e.code||e.message||""));
-    }
-  };
-
-  // Save settings (remembered selections)
-  const saveSettings = async (rem) => {
-    try { await window.DB.doc("settings").set({ remembered:rem }); } catch(e) {}
-  };
-
-  // Init: load settings + today's data (+ migrate old format)
+  // ── STORAGE: Firebase Firestore + localStorage fallback ──
   useEffect(()=>{
     (async()=>{
       addLog("⏳ Завантаження...");
-      const today = todayStr();
-
-      // Load settings
+      let loaded_from = null;
+      // Try Firebase
       try {
-        const setSnap = await window.DB.doc("settings").get();
-        if (setSnap.exists) {
-          const s = setSnap.data();
-          if (s.remembered) {
-            setRemembered(s.remembered);
-            if (s.remembered.mat) setMat(s.remembered.mat);
-            if (s.remembered.src) setSrc(s.remembered.src);
-            if (s.remembered.siz) setSiz(s.remembered.siz);
+        addLog("☁️ Firebase .get()...");
+        const snap = await window.DB_REF.get();
+        if (snap.exists) {
+          const d = snap.data();
+          if (d.date)       setDate(d.date);
+          if (d.weather)    setWeather(d.weather);
+          if (d.transects && d.transects.length > 0) setTransects(d.transects);
+          if (d.remembered) {
+            setRemembered(d.remembered);
+            if (d.remembered.mat) setMat(d.remembered.mat);
+            if (d.remembered.src) setSrc(d.remembered.src);
+            if (d.remembered.siz) setSiz(d.remembered.siz);
           }
+          setSaveStatus("saved");
+          loaded_from = "firebase";
+          addLog("✅ Дані з Firebase (" + (d.transects?.length||0) + " тр.)");
+        } else {
+          addLog("📄 Firebase порожній (новий документ)");
         }
-      } catch(e) { addLog("⚠ Settings: " + (e.code||"")); }
-
-      // Migrate: check old "current_day" doc
-      try {
-        const oldSnap = await window.DB.doc("current_day").get();
-        if (oldSnap.exists) {
-          const old = oldSnap.data();
-          if (old.transects && old.transects.length > 0 && old.date) {
-            // Save old data as a proper day doc
-            await window.DB.doc("day_" + old.date).set({
-              date: old.date, weather: old.weather, transects: old.transects,
-              updatedAt: new Date().toISOString()
-            });
-            addLog("🔄 Міграція: " + old.date + " (" + old.transects.length + " тр.)");
-            // Delete old doc
-            await window.DB.doc("current_day").delete();
+      } catch(e) {
+        addLog("❌ Firebase: " + (e.code || e.message || String(e)));
+      }
+      // Fallback to localStorage if Firebase didn't load
+      if (!loaded_from) {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const d = JSON.parse(raw);
+            if (d.date) setDate(d.date);
+            if (d.weather) setWeather(d.weather);
+            if (d.transects && d.transects.length > 0) setTransects(d.transects);
+            if (d.remembered) {
+              setRemembered(d.remembered);
+              if (d.remembered.mat) setMat(d.remembered.mat);
+              if (d.remembered.src) setSrc(d.remembered.src);
+              if (d.remembered.siz) setSiz(d.remembered.siz);
+            }
+            setSaveStatus("local");
+            loaded_from = "local";
+            addLog("📱 Дані з localStorage (" + (d.transects?.length||0) + " тр.)");
+          } else {
+            addLog("📱 localStorage порожній");
           }
+        } catch(e2) {
+          addLog("❌ localStorage: " + String(e2));
         }
-      } catch(e) { /* ignore migration errors */ }
-
-      // Load today's data
-      setDate(today);
-      const dayData = await loadDay(today);
-      setWeather(dayData.weather);
-      setTransects(dayData.transects);
-      if (dayData.transects.length > 0) {
-        setSaveStatus("saved");
-        addLog("✅ " + today + " (" + dayData.transects.length + " тр.)");
-      } else {
-        addLog("📄 " + today + " — порожній");
+      }
+      if (!loaded_from) {
+        addLog("🆕 Чистий старт — даних немає");
         setSaveStatus("");
       }
-
       setLoaded(true);
     })();
   },[]);
 
-  // Load aggregate stats (all days)
-  const [aggStats, setAggStats] = useState(null); // {totalItems, totalTransects, totalPlastic, days}
-  const loadAggregate = useCallback(async () => {
+  const persist = useCallback(async (ts,dt,wx,rem) => {
+    setSaveStatus("saving");
+    const data = { date:dt, weather:wx, transects:ts, remembered:rem, updatedAt: new Date().toISOString() };
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch(e) {}
     try {
-      const snap = await window.DB.get();
-      let totalItems = 0, totalTransects = 0, totalPlastic = 0, dayCount = 0;
-      const tallies = {};
-      snap.forEach(doc => {
-        if (!doc.id.startsWith("day_")) return;
-        const d = doc.data();
-        if (!d.transects || d.transects.length === 0) return;
-        dayCount++;
-        d.transects.forEach(t => {
-          totalTransects++;
-          t.items.forEach(i => {
-            totalItems++;
-            if (i.mat === "plastic") totalPlastic++;
-          });
-          Object.entries(t.tallies||{}).forEach(([k,v]) => { tallies[k]=(tallies[k]||0)+v; });
-        });
-      });
-      setAggStats({ totalItems, totalTransects, totalPlastic, dayCount, tallies });
-      addLog("📊 Агрегат: " + dayCount + " днів, " + totalItems + " предм.");
+      // Save to main doc (current session)
+      await window.DB_REF.set(data);
+      // Also save to per-day doc for multi-day stats
+      if (dt && ts.length > 0) {
+        const dayRef = window.DB_COL.doc("day_" + dt);
+        await dayRef.set({ date:dt, weather:wx, transects:ts, updatedAt: new Date().toISOString() });
+      }
+      setSaveStatus("saved");
+      addLog("☁️ Збережено (" + ts.length + " тр.)");
     } catch(e) {
-      addLog("⚠ Aggregate: " + (e.code||e.message||""));
+      setSaveStatus("local");
+      addLog("⚠ Save fail: " + (e.code || e.message || String(e)));
     }
   },[]);
 
-  // ── PERSIST (transect changes within current day) ──
-  const setTs = (newTs) => {
-    setTransects(newTs);
-    saveDay(date, weather, newTs);
-  };
-
-  // ── CHANGE WEATHER (same day) ──
-  const setWx = (wx) => {
-    setWeather(wx);
-    saveDay(date, wx, transects);
-  };
-
-  // ── CHANGE DATE → save current, load new ──
-  const switchDate = async (newDate) => {
-    // Save current day first
-    if (transects.length > 0 || weather) {
-      await saveDay(date, weather, transects);
+  // Load all days for aggregate stats
+  const loadAllDays = useCallback(async () => {
+    try {
+      const snap = await window.DB_COL.get();
+      const days = [];
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (doc.id.startsWith("day_") && d.transects && d.transects.length > 0) {
+          days.push({ date:d.date, weather:d.weather, transects:d.transects });
+        }
+      });
+      days.sort((a,b) => a.date.localeCompare(b.date));
+      setAllDays(days);
+      addLog("📊 Завантажено " + days.length + " днів");
+    } catch(e) {
+      addLog("⚠ Load days: " + (e.code||e.message||String(e)));
     }
-    // Load new day
-    addLog("📅 → " + newDate);
-    const dayData = await loadDay(newDate);
-    setDate(newDate);
-    setWeather(dayData.weather);
-    setTransects(dayData.transects);
-    setTId(null);
-    if (dayData.transects.length > 0) {
-      addLog("✅ " + newDate + " (" + dayData.transects.length + " тр.)");
-    } else {
-      addLog("📄 " + newDate + " — порожній");
-    }
-  };
+  },[]);
 
-  // ── REMEMBER (save to settings) ──
-  const setRem = (rem) => { setRemembered(rem); saveSettings(rem); };
+  const setTs = (newTs) => { setTransects(newTs); persist(newTs,date,weather,remembered); };
+  const setDay = (dt,wx) => { setDate(dt); setWeather(wx); persist(transects,dt,wx,remembered); };
+  const setRem = (rem)   => { setRemembered(rem); persist(transects,date,weather,rem); };
 
   // ── DERIVED ──
   const zone     = ZONES.find(z=>z.id===zoneId);
@@ -766,7 +735,7 @@ function App() {
               {tab==="zones" && `${date} · ${weather?WEATHER.find(w=>w.id===weather)?.label:"погода?"}`}
               {tab==="zone"  && `${zoneTs.length} трансект(ів)`}
               {tab==="tally" && `${formTotal} предм. · ${activeT?.open?"● відкр.":"закр."}`}
-              {tab==="day"   && `${date} · ${transects.length} тр. · ${dayTotal} предм.`}
+              {tab==="day"   && `${statsMode==="all"?allDays.length+" днів":transects.length+" тр."} · ${statsMode==="all"?allDays.flatMap(d=>d.transects).flatMap(t=>t.items).length:dayTotal} предм.`}
               {tab==="export"&& "CSV лог + конц."}
             </div>
           </div>
@@ -1095,43 +1064,90 @@ function App() {
           )}
 
           {/* ══ DAY ══ */}
-          {tab==="day"&&<>
+          {tab==="day"&&(()=>{
+            // Compute stats based on mode
+            const isAll = statsMode==="all";
+            const allTs = isAll ? allDays.flatMap(d=>d.transects) : transects;
+            const allIt = allTs.flatMap(t=>t.items);
+            const stTotal = allIt.length;
+            const stPlastic = allIt.filter(i=>i.mat==="plastic").length;
+            const stTrCount = allTs.length;
+            const stAvgConc = stTrCount>0 ? (stTotal/stTrCount/AREA).toFixed(4) : "—";
+            const stTallies = allTs.reduce((acc,t)=>{
+              Object.entries(t.tallies).forEach(([k,v])=>{acc[k]=(acc[k]||0)+v;});
+              return acc;
+            },{});
+            const stMat = matStats(stTallies);
+            const stTypeConcs = Object.entries(stTallies).map(([k,total])=>{
+              const [mId,sId,szId]=k.split("|");
+              return {
+                key:k, total,
+                mat: MATERIALS.find(m=>m.id===mId),
+                src: SOURCES.find(s=>s.id===sId),
+                siz: SIZES.find(s=>s.id===szId),
+                avgConc: stTrCount>0?(total/stTrCount/AREA).toFixed(4):"—",
+              };
+            }).sort((a,b)=>b.total-a.total);
+
+            return <>
             <div className="sec">
-              <div className="lbl">Дата</div>
+              <div className="lbl">Параметри дня</div>
               <input className="inp" type="date" value={date}
-                onChange={e=>switchDate(e.target.value)}
+                onChange={e=>setDay(e.target.value,weather)}
                 style={{marginBottom:12}}/>
               <div className="lbl">Погода</div>
               <div className="wx-row">
                 {WEATHER.map(w=>(
                   <div key={w.id} style={{textAlign:"center"}}>
                     <div className={`wx-btn${weather===w.id?" on":""}`}
-                      onClick={()=>setWx(w.id)}>{w.e}</div>
+                      onClick={()=>setDay(date,w.id)}>{w.e}</div>
                     <div className="wx-lbl">{w.label}</div>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* STATS MODE TOGGLE */}
+            <div className="sec" style={{paddingBottom:10}}>
+              <div style={{display:"flex",gap:8}}>
+                {[["today","📅 Сьогодні"],["all","📊 Весь період"]].map(([id,label])=>(
+                  <div key={id}
+                    className={`chip${statsMode===id?" on":""}`}
+                    style={{flex:1,textAlign:"center",fontSize:13}}
+                    onClick={()=>{
+                      setStatsMode(id);
+                      if (id==="all" && allDays.length===0) loadAllDays();
+                    }}>
+                    {label}
+                  </div>
+                ))}
+              </div>
+              {isAll && <div style={{fontSize:11,color:C.muted,fontFamily:"'Syne Mono',monospace",
+                marginTop:8,textAlign:"center"}}>
+                {allDays.length} днів · {allDays.map(d=>d.date).join(", ")}
+              </div>}
+            </div>
+
             <div className="sec">
-              <div className="lbl">📅 {date}</div>
+              <div className="lbl">{isAll?"Весь період":"День"}</div>
               <div className="day-stats">
-                <div className="dstat"><div className="dstat-n">{transects.length}</div><div className="dstat-l">Трансектів</div></div>
-                <div className="dstat"><div className="dstat-n">{dayTotal}</div><div className="dstat-l">Предметів</div></div>
-                <div className="dstat blue"><div className="dstat-n">{dayPlastic}</div><div className="dstat-l">Пластику</div></div>
+                <div className="dstat"><div className="dstat-n">{stTrCount}</div><div className="dstat-l">Трансектів</div></div>
+                <div className="dstat"><div className="dstat-n">{stTotal}</div><div className="dstat-l">Предметів</div></div>
+                <div className="dstat blue"><div className="dstat-n">{stPlastic}</div><div className="dstat-l">Пластику</div></div>
                 <div className="dstat amber">
-                  <div className="dstat-n">{dayTotal>0?Math.round(dayPlastic/dayTotal*100):0}%</div>
+                  <div className="dstat-n">{stTotal>0?Math.round(stPlastic/stTotal*100):0}%</div>
                   <div className="dstat-l">Пласт. %</div>
                 </div>
               </div>
             </div>
-            {transectCount>0&&(
+            {stTrCount>0&&(
               <div className="sec">
-                <div className="lbl">Концентрація · {date}</div>
+                <div className="lbl">Середня концентрація</div>
                 <div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:12,
                   padding:16,fontFamily:"'Syne Mono',monospace",fontSize:14,color:C.text,
                   display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span style={{color:C.muted,fontSize:12}}>пред./тр./250м²</span>
-                  <span style={{color:C.acc,fontSize:26,fontWeight:700}}>{avgConc}</span>
+                  <span style={{color:C.acc,fontSize:26,fontWeight:700}}>{stAvgConc}</span>
                 </div>
                 <div className="lbl" style={{marginTop:16}}>Топ типів</div>
                 <table className="dtbl">
@@ -1144,7 +1160,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {typeConcs.slice(0,10).map(tc=>(
+                    {stTypeConcs.slice(0,10).map(tc=>(
                       <tr key={tc.key}>
                         <td>
                           <div className="d-mat">{tc.mat?.e} {tc.mat?.label}</div>
@@ -1159,40 +1175,22 @@ function App() {
                 </table>
               </div>
             )}
-            {dayMat.length>0&&(
+            {stMat.length>0&&(
               <div className="sec">
                 <div className="lbl">Структура матеріалів</div>
-                {dayMat.map(m=>(
+                {stMat.map(m=>(
                   <div key={m.id} className="bar-row">
                     <div className="bar-lbl">{m.e} {m.label}</div>
                     <div className="bar-track">
-                      <div className="bar-fill" style={{width:`${Math.round(m.count/dayTotal*100)}%`}}/>
+                      <div className="bar-fill" style={{width:`${Math.round(m.count/stTotal*100)}%`}}/>
                     </div>
                     <div className="bar-val">{m.count}</div>
                   </div>
                 ))}
               </div>
             )}
-            {/* AGGREGATE BANNER */}
-            <div className="sec">
-              <div className="lbl">📊 Весь період дослідження</div>
-              {aggStats ? (
-                <div className="day-stats">
-                  <div className="dstat"><div className="dstat-n">{aggStats.dayCount}</div><div className="dstat-l">Днів</div></div>
-                  <div className="dstat"><div className="dstat-n">{aggStats.totalTransects}</div><div className="dstat-l">Трансектів</div></div>
-                  <div className="dstat"><div className="dstat-n">{aggStats.totalItems}</div><div className="dstat-l">Предметів</div></div>
-                  <div className="dstat amber">
-                    <div className="dstat-n">{aggStats.totalItems>0?Math.round(aggStats.totalPlastic/aggStats.totalItems*100):0}%</div>
-                    <div className="dstat-l">Пластик</div>
-                  </div>
-                </div>
-              ) : (
-                <button className="btn-new" onClick={loadAggregate} style={{marginTop:0}}>
-                  Завантажити статистику
-                </button>
-              )}
-            </div>
-          </>}
+          </>;
+          })()}
 
           {/* ══ EXPORT ══ */}
           {tab==="export"&&(
