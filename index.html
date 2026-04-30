@@ -330,12 +330,14 @@ textarea.inp{resize:none;line-height:1.5}
 const mkKey    = (m,s,sz) => `${m}|${s}|${sz}`;
 const nowTime  = () => new Date().toTimeString().slice(0,5);
 const todayStr = () => new Date().toISOString().split("T")[0];
-const AREA     = 250; // 50×5 м²
+const tArea    = t => t.area || 250;        // backward-compat для старих записів
+const tStart   = t => t.timeStart || t.time || "";
+const tEnd     = t => t.timeEnd   || t.time || "";
 
-const matStats = tallies =>
-  MATERIALS.map(m=>({...m,
+const matStats = (tallies, mats) =>
+  mats.map(m=>({...m,
     count: Object.entries(tallies)
-      .filter(([k])=>k.startsWith(m.id))
+      .filter(([k])=>k.startsWith(m.id+"|"))
       .reduce((a,[,v])=>a+v,0)
   })).filter(m=>m.count>0).sort((a,b)=>b.count-a.count);
 
@@ -395,6 +397,10 @@ function App() {
   const [src, setSrc] = useState(null);
   const [siz, setSiz] = useState(null);
   const [comment, setComment] = useState("");
+  const [newLen, setNewLen] = useState(50);
+  const [newWid, setNewWid] = useState(5);
+  const [customMaterials, setCustomMaterials] = useState([]);
+  const [newMat, setNewMat] = useState("");
   const commentRef = useRef("");
   const [remembered, setRemembered] = useState({mat:null,src:null,siz:null});
 
@@ -443,8 +449,8 @@ function App() {
   };
 
   // Save settings (remembered selections)
-  const saveSettings = async (rem) => {
-    try { await window.DB.doc("settings").set({ remembered:rem }); } catch(e) {}
+  const saveSettings = async (rem, custom) => {
+    try { await window.DB.doc("settings").set({ remembered:rem, customMaterials:custom||[] }); } catch(e) {}
   };
 
   // Failsafe: if init hangs (e.g. Firebase timeout), force load after 8s
@@ -473,6 +479,7 @@ function App() {
               if (s.remembered.src) setSrc(s.remembered.src);
               if (s.remembered.siz) setSiz(s.remembered.siz);
             }
+            if (Array.isArray(s.customMaterials)) setCustomMaterials(s.customMaterials);
           }
         } catch(e) { addLog("⚠ Settings: " + (e.code||String(e))); }
 
@@ -575,12 +582,50 @@ function App() {
   };
 
   // ── REMEMBER (save to settings) ──
-  const setRem = (rem) => { setRemembered(rem); saveSettings(rem); };
+  const setRem = (rem) => { setRemembered(rem); saveSettings(rem, customMaterials); };
+  const updateCustom = (custom) => { setCustomMaterials(custom); saveSettings(remembered, custom); };
+
+  const tryAddCustom = () => {
+    const v = newMat.trim();
+    if (!v) return;
+    if (v.includes("|")) { showToast("⚠ Без \"|\""); return; }
+    if (MATERIALS.some(m=>m.id===v||m.label===v)) { showToast("⚠ Базовий"); return; }
+    if (customMaterials.includes(v)) { showToast("⚠ Дубль"); return; }
+    updateCustom([v, ...customMaterials]);
+    setNewMat("");
+    showToast("✓ Додано");
+  };
+
+  const delCustomMat = (label) => {
+    const tagged = transects.flatMap(t=>t.items).filter(i=>i.mat===label).length;
+    const doDelete = () => {
+      if (mat===label) setMat(null);
+      if (remembered.mat===label) setRem({...remembered, mat:null});
+      updateCustom(customMaterials.filter(m=>m!==label));
+      showToast("🗑 Видалено");
+    };
+    if (tagged > 0) askConfirm(`Видалити "${label}"? ${tagged} предметів збережуть назву.`, doDelete);
+    else doDelete();
+  };
 
   // ── DERIVED ──
   const zone     = ZONES.find(z=>z.id===zoneId);
   const zoneTs   = transects.filter(t=>t.zoneId===zoneId);
   const activeT  = transects.find(t=>t.id===tId);
+
+  // Materials: custom (top) + base; orphans (deleted but still tagged) appended for lookup only
+  const selectableMaterials = [
+    ...customMaterials.map(l=>({id:l,label:l,e:"🏷"})),
+    ...MATERIALS,
+  ];
+  const orphanMatIds = (() => {
+    const known = new Set(selectableMaterials.map(m=>m.id));
+    const seen = new Set();
+    transects.forEach(t=>t.items.forEach(i=>{ if(!known.has(i.mat)) seen.add(i.mat); }));
+    return [...seen];
+  })();
+  const allMaterials = [...selectableMaterials, ...orphanMatIds.map(id=>({id,label:id,e:"🏷"}))];
+  const findMat = (id) => allMaterials.find(m=>m.id===id) || {id,label:id,e:"🏷"};
 
   const curKey   = mat&&src&&siz ? mkKey(mat,src,siz) : null;
   const curCount = curKey ? (activeT?.tallies[curKey]||0) : 0;
@@ -597,7 +642,7 @@ function App() {
     Object.entries(t.tallies).forEach(([k,v])=>{acc[k]=(acc[k]||0)+v;});
     return acc;
   },{});
-  const dayMat = matStats(allTallies);
+  const dayMat = matStats(allTallies, allMaterials);
 
   // ── TALLY ACTIONS ──
   const addOne = () => {
@@ -610,11 +655,12 @@ function App() {
     };
     setTs(transects.map(t => t.id!==tId ? t : {
       ...t,
+      timeEnd: nowTime(),
       tallies: {...t.tallies, [curKey]:(t.tallies[curKey]||0)+1},
       items:   [...t.items, newItem],
     }));
     setComment(""); commentRef.current = "";
-    const ml = MATERIALS.find(m=>m.id===mat)?.label;
+    const ml = findMat(mat).label;
     const sl = SIZES.find(s=>s.id===siz)?.label;
     showToast(`+1 · ${ml} / ${sl}`);
   };
@@ -651,9 +697,13 @@ function App() {
 
   // ── TRANSECT ACTIONS ──
   const newTransect = () => {
+    const L = +newLen||50, W = +newWid||5;
+    if (L<=0 || W<=0) { showToast("⚠ Розмір > 0"); return; }
     const closed = transects.map(t=>t.zoneId===zoneId&&t.open?{...t,open:false}:t);
     const num = zoneTs.length+1;
-    const nt = { id:Date.now(), zoneId, num, time:nowTime(), note:"", open:true, tallies:{}, items:[] };
+    const t0 = nowTime();
+    const nt = { id:Date.now(), zoneId, num, timeStart:t0, timeEnd:t0,
+      length:L, width:W, area:L*W, note:"", open:true, tallies:{}, items:[] };
     const newTs = [...closed, nt];
     setTs(newTs);
     setTId(nt.id);
@@ -698,27 +748,28 @@ function App() {
       const [mId,sId,szId]=k.split("|");
       return {
         key:k, n,
-        mat: MATERIALS.find(m=>m.id===mId),
+        mat: findMat(mId),
         src: SOURCES.find(s=>s.id===sId),
         siz: SIZES.find(s=>s.id===szId),
-        conc: (n/AREA).toFixed(4),
+        conc: (n/tArea(t)).toFixed(4),
       };
     }).sort((a,b)=>b.n-a.n);
   };
 
   // ── DAY STATS ──
   const transectCount = transects.length;
-  const avgConc = transectCount>0 ? (dayTotal/transectCount/AREA).toFixed(4) : "—";
+  const totalArea = transects.reduce((s,t)=>s+tArea(t),0);
+  const avgConc = totalArea>0 ? (dayTotal/totalArea).toFixed(4) : "—";
 
   const typeConcs = (() => {
     return Object.entries(allTallies).map(([k,total])=>{
       const [mId,sId,szId]=k.split("|");
       return {
         key:k, total,
-        mat: MATERIALS.find(m=>m.id===mId),
+        mat: findMat(mId),
         src: SOURCES.find(s=>s.id===sId),
         siz: SIZES.find(s=>s.id===szId),
-        avgConc: transectCount>0?(total/transectCount/AREA).toFixed(4):"—",
+        avgConc: totalArea>0?(total/totalArea).toFixed(4):"—",
       };
     }).sort((a,b)=>b.total-a.total);
   })();
@@ -727,23 +778,25 @@ function App() {
   const exportTSV = () => {
     const T = "\t";
     const clean = s => String(s||"").replace(/\t/g," ").replace(/\n/g," ");
-    const h1 = ["Дата","Зона","Трансект_№","Час","№","Матеріал","Джерело","Розмір","Примітка"].join(T);
+    const h1 = ["Дата","Зона","Трансект_№","ЧасПочаток–ЧасКінець","Площа_м2","№","Матеріал","Джерело","Розмір","Примітка"].join(T);
     const rows1 = transects.flatMap(t=>{
       const zn = ZONES.find(z=>z.id===t.zoneId)?.name||t.zoneId;
+      const trange = `${tStart(t)}–${tEnd(t)}`;
+      const ar = tArea(t);
       const lines = [];
       // Transect note as a separate row (if exists)
       if (t.note && t.note.trim()) {
-        lines.push([date,clean(zn),t.num,t.time,"","[ТРАНСЕКТ]","","","Примітка: "+clean(t.note)].join(T));
+        lines.push([date,clean(zn),t.num,trange,ar,"","[ТРАНСЕКТ]","","","Примітка: "+clean(t.note)].join(T));
       }
       // Item rows — each with its own comment as "Примітка"
       t.items.forEach(i=>{
-        const ml = MATERIALS.find(m=>m.id===i.mat)?.label||i.mat;
+        const ml = findMat(i.mat).label;
         const sl = SOURCES.find(s=>s.id===i.src)?.label||i.src;
-        lines.push([date,clean(zn),t.num,t.time,i.n,ml,sl,i.siz,clean(i.comment)].join(T));
+        lines.push([date,clean(zn),t.num,trange,ar,i.n,ml,sl,i.siz,clean(i.comment)].join(T));
       });
       return lines;
     });
-    const h2 = "\n" + "СТАТИСТИКА КОНЦЕНТРАЦІЇ (пред./250м²)";
+    const h2 = "\n" + "СТАТИСТИКА КОНЦЕНТРАЦІЇ (пред./м², загальна площа " + totalArea + " м²)";
     const h3 = ["Матеріал","Джерело","Розмір","Всього","Сер.конц."].join(T);
     const rows2 = typeConcs.map(tc=>
       [tc.mat?.label||"—",tc.src?.label||"—",tc.siz?.label||"—",tc.total,tc.avgConc].join(T)
@@ -849,8 +902,8 @@ function App() {
                       <div className="tc-head">
                         <div className="tc-num">#{t.num}</div>
                         <div className="tc-info">
-                          <div className="tc-title">Т№{t.num} · {t.time}</div>
-                          <div className="tc-sub">{tot} предм. · {sts.length} комб.</div>
+                          <div className="tc-title">Т№{t.num} · {tStart(t)}–{tEnd(t)}</div>
+                          <div className="tc-sub">{tot} предм. · {tArea(t)}м² · {sts.length} комб.</div>
                         </div>
                         <div className="tc-right">
                           <div className="tc-total">{tot}</div>
@@ -901,7 +954,21 @@ function App() {
                   );
                 })}
               </div>
-              <button className="btn-new" onClick={newTransect}>+ Новий трансект (50×5 м)</button>
+              <div style={{display:"flex",gap:8,marginTop:14}}>
+                <div style={{flex:1}}>
+                  <div className="lbl" style={{marginBottom:6}}>Довжина, м</div>
+                  <input className="inp" type="number" min="1" inputMode="numeric"
+                    value={newLen} onChange={e=>setNewLen(e.target.value)}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div className="lbl" style={{marginBottom:6}}>Ширина, м</div>
+                  <input className="inp" type="number" min="1" inputMode="numeric"
+                    value={newWid} onChange={e=>setNewWid(e.target.value)}/>
+                </div>
+              </div>
+              <button className="btn-new" onClick={newTransect} style={{marginTop:10}}>
+                + Новий трансект ({(+newLen||0)}×{(+newWid||0)} = {(+newLen||0)*(+newWid||0)} м²)
+              </button>
             </div>
           )}
 
@@ -939,10 +1006,10 @@ function App() {
                   <div className="step-hdr">
                     <div className={`step-n${mat?"":" off"}`}>1</div>
                     <div className="step-title">Матеріал</div>
-                    {mat&&<div className="step-sel">{MATERIALS.find(m=>m.id===mat)?.label}</div>}
+                    {mat&&<div className="step-sel">{findMat(mat).label}</div>}
                   </div>
                   <div className="chips">
-                    {MATERIALS.map(m=>(
+                    {selectableMaterials.map(m=>(
                       <div key={m.id} className={`chip${mat===m.id?" on":""}`}
                         onClick={()=>handleMatSelect(m.id)}>{m.e} {m.label}</div>
                     ))}
@@ -999,7 +1066,7 @@ function App() {
                     <div className="tally-top">
                       <div className="tally-desc">
                         <div className="tally-combo">
-                          {MATERIALS.find(m=>m.id===mat)?.e} {MATERIALS.find(m=>m.id===mat)?.label} · {SOURCES.find(s=>s.id===src)?.label}
+                          {findMat(mat).e} {findMat(mat).label} · {SOURCES.find(s=>s.id===src)?.label}
                         </div>
                         <div className="tally-sub">Клас {siz} ({SIZES.find(s=>s.id===siz)?.desc})</div>
                       </div>
@@ -1047,7 +1114,7 @@ function App() {
                       <div className="ilog">
                         {groupItems([...activeT.items].reverse()).map((g, gIdx)=>{
                           const isFirst = gIdx===0;
-                          const ml = MATERIALS.find(m=>m.id===g.mat);
+                          const ml = findMat(g.mat);
                           const sl = SOURCES.find(s=>s.id===g.src);
                           const isGroup = g.count > 1;
                           return (
@@ -1080,7 +1147,7 @@ function App() {
 
               {detailTab==="stats"&&(
                 <div className="sec">
-                  <div className="lbl">Концентрація (пред./250м²)</div>
+                  <div className="lbl">Концентрація (пред./{tArea(activeT)}м²)</div>
                   {formTotal===0
                     ? <div className="empty">Додай предмети</div>
                     : (
@@ -1111,7 +1178,7 @@ function App() {
                   }
                   <div style={{marginTop:14,padding:12,background:C.s3,borderRadius:10,
                     fontFamily:"'Syne Mono',monospace",fontSize:12,color:C.muted,lineHeight:1.8}}>
-                    конц. = N / 250 м² (50×5 м)
+                    конц. = N / {tArea(activeT)} м² ({activeT.length||50}×{activeT.width||5} м)
                   </div>
                 </div>
               )}
@@ -1154,7 +1221,7 @@ function App() {
                 <div style={{background:C.s2,border:`1px solid ${C.border}`,borderRadius:12,
                   padding:16,fontFamily:"'Syne Mono',monospace",fontSize:14,color:C.text,
                   display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{color:C.muted,fontSize:12}}>пред./тр./250м²</span>
+                  <span style={{color:C.muted,fontSize:12}}>пред./м² · S={totalArea}м²</span>
                   <span style={{color:C.acc,fontSize:26,fontWeight:700}}>{avgConc}</span>
                 </div>
                 <div className="lbl" style={{marginTop:16}}>Топ типів</div>
@@ -1238,7 +1305,37 @@ function App() {
                 Кожен предмет = окремий рядок + примітка<br/>
                 Примітка трансекта — окремим рядком
               </div>
-              <button className="btn-danger" onClick={resetAll}>🔄 Скинути весь день</button>
+              <div style={{marginTop:18,paddingTop:18,borderTop:`1px solid ${C.border}`}}>
+                <div className="lbl">Матеріали</div>
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  <input className="inp" placeholder="Нова назва..." value={newMat}
+                    onChange={e=>setNewMat(e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter") tryAddCustom();}}/>
+                  <button onClick={tryAddCustom} style={{background:C.acc,color:"#000",border:"none",
+                    borderRadius:10,padding:"0 20px",fontSize:24,fontWeight:700,cursor:"pointer",
+                    fontFamily:"'Syne Mono',monospace"}}>+</button>
+                </div>
+                {customMaterials.length>0 ? (
+                  <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+                    {customMaterials.map(l=>(
+                      <div key={l} style={{display:"flex",alignItems:"center",gap:10,
+                        padding:"10px 14px",background:C.s2,border:`1px solid ${C.border}`,borderRadius:10}}>
+                        <span style={{flex:1,color:C.text,fontSize:15}}>🏷 {l}</span>
+                        <button onClick={()=>delCustomMat(l)} style={{background:"none",border:"none",
+                          color:C.red,fontSize:24,cursor:"pointer",padding:"0 8px",lineHeight:1}}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{fontSize:13,color:C.muted,fontFamily:"'Syne Mono',monospace",
+                    marginBottom:10,fontStyle:"italic"}}>Немає кастомних</div>
+                )}
+                <div style={{fontSize:11,color:C.muted,fontFamily:"'Syne Mono',monospace",
+                  lineHeight:1.7,padding:"10px 12px",background:C.s3,borderRadius:8}}>
+                  Базові (незмінні): {MATERIALS.map(m=>m.e+" "+m.label).join(" · ")}
+                </div>
+              </div>
+              <button className="btn-danger" onClick={resetAll} style={{marginTop:18}}>🔄 Скинути весь день</button>
               <div className="note-text" style={{marginTop:12}}>
                 {saveStatus==="saved"?"☁️ Дані в Firebase":""}
                 {saveStatus==="error"?"❌ Помилка Firebase!":""}
